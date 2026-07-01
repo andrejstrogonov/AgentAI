@@ -1,5 +1,7 @@
 {
-    "api_key": "sk-LgqiRR4lfipwfWA6vrs4xJvZOiEzYpsW",
     "base_url": "https://api.proxyapi.ru/anthropic",
-    "models": ["claude-3-sonnet", "claude-3-opus"]
+    "models": ["claude-sonnet-4-6", "claude-opus-4-1"],
+    "max_tokens": 4096,
+    "temperature": 0.2,
+    "note": "API key should be set in environment variable ANTHROPIC_API_KEY"
 }

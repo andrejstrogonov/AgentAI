@@ -1,8 +1,8 @@
 import asyncio
 import logging
+import time
 from typing import List, Dict, Any
 
-import anthropic
 from anthropic import AsyncAnthropic, Anthropic
 
 
@@ -12,49 +12,57 @@ class ModelProcessor:
         self.api_key = config.get("api_key")
         self.base_url = config.get("base_url")
         self.model_list = config.get("models", [])
+        self.max_tokens = config.get("max_tokens", 4096)
+        self.temperature = config.get("temperature", 0.2)
 
-        # Инициализация клиентов
-        self.async_client = AsyncAnthropic(
-            api_key=self.api_key,
-            base_url=self.base_url
-        )
-        self.sync_client = Anthropic(
-            api_key=self.api_key,
-            base_url=self.base_url
-        )
+        if not self.api_key:
+            raise ValueError("API key not provided in config")
+        if not self.model_list:
+            raise ValueError("Model list is empty")
 
+        client_kwargs = {"api_key": self.api_key}
+        if self.base_url:
+            client_kwargs["base_url"] = self.base_url
+
+        self.async_client = AsyncAnthropic(**client_kwargs)
+        self.sync_client = Anthropic(**client_kwargs)
         self.logger = logging.getLogger(__name__)
 
-    async def process_with_models_parallel(self, project_data: str) -> List[Dict[str, Any]]:
-        """Обработка через несколько моделей параллельно с одним API ключом"""
-        if not self.model_list:
-            raise ValueError("Не указаны модели для обработки")
-
-        results = []
-
-        # Создаем системный промпт один раз
+    @staticmethod
+    def _build_unified_prompt(project_data: str) -> Dict[str, str]:
+        """Построение единого промпта (объединение system + user в один контекст)"""
         system_prompt = (
-            "Ты — эксперт в области разработки на Scala, Chisel, FIRRTL, Python, Tcl и проектирования цифровой аппаратуры "
-            "на Verilog/VHDL для Intel Quartus Prime. Твоя задача — проанализировать предоставленный "
-            "проект генератора, найти ошибки и сделать его полностью запускаемым."
+            "You are an expert in Python development, software architecture, and code analysis. "
+            "Your task is to analyze the provided project code, identify errors and issues, "
+            "and provide recommendations for improvement."
         )
 
-        user_query = (
-            "Все уже сделано так, как ты говоришь, продолжи генерировать до успешного исполнения проекта.\n\n"
-            f"Проект: {project_data}"
+        user_prompt = (
+            "Please analyze the following project code, identify all errors and issues, "
+            "and provide recommendations for fixes and improvements.\n\n"
+            f"PROJECT CODE:\n{project_data}"
         )
 
-        # Создаем задачи для параллельного выполнения
+        return {
+            "system": system_prompt,
+            "user": user_prompt
+        }
+
+    async def process_with_models_parallel(self, project_data: str) -> List[Dict[str, Any]]:
+        """Обработка через несколько моделей параллельно (async)"""
+        if not self.model_list:
+            raise ValueError("No models specified")
+
+        prompts = self._build_unified_prompt(project_data)
+
         tasks = [
-            self._process_single_model(model_name, system_prompt, user_query)
+            self._process_single_model_async(model_name, prompts)
             for model_name in self.model_list
         ]
 
-        # Выполняем все задачи параллельно
         try:
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            # Обрабатываем результаты
             processed_results = []
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
@@ -63,8 +71,7 @@ class ModelProcessor:
                         "response": None,
                         "status": "error",
                         "error": str(result),
-                        "error_type": type(result).__name__,
-                        "timestamp": asyncio.get_event_loop().time()
+                        "error_type": type(result).__name__
                     })
                 else:
                     processed_results.append(result)
@@ -72,94 +79,72 @@ class ModelProcessor:
             return processed_results
 
         except Exception as e:
-            self.logger.error(f"Ошибка при параллельной обработке: {str(e)}")
+            self.logger.error(f"Error in parallel processing: {str(e)}")
             raise
 
-    async def _process_single_model(self, model_name: str, system_prompt: str, user_query: str) -> Dict[str, Any]:
-        """Обработка одной модели"""
+    async def _process_single_model_async(self, model_name: str, prompts: Dict[str, str]) -> Dict[str, Any]:
+        """Обработка одной модели в async режиме"""
         try:
-            # Создаем сообщение для модели
             message = await self.async_client.messages.create(
                 model=model_name,
-                max_tokens=4096,
-                temperature=0.2,
-                system=system_prompt,
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
+                system=prompts["system"],
                 messages=[
                     {
                         "role": "user",
-                        "content": user_query
+                        "content": prompts["user"]
                     }
                 ]
             )
 
-            # Сохраняем результат
             response_text = message.content[0].text if message.content else ""
 
-            result = {
+            return {
                 "model": model_name,
                 "response": response_text,
                 "status": "success",
-                "response_length": len(response_text),
-                "timestamp": asyncio.get_event_loop().time()
+                "response_length": len(response_text)
             }
 
-            return result
-
         except Exception as e:
-            # Если произошла ошибка, сохраняем информацию об ошибке
-            result = {
+            return {
                 "model": model_name,
                 "response": None,
                 "status": "error",
                 "error": str(e),
-                "error_type": type(e).__name__,
-                "timestamp": asyncio.get_event_loop().time()
+                "error_type": type(e).__name__
             }
-            return result
 
-    def _process_with_models_sequentially(self, project_data: str) -> List[Dict[str, Any]]:
-        """Обработка через несколько моделей последовательно с одним API ключом (оригинальная версия)"""
+    def process_with_models_sequential(self, project_data: str) -> List[Dict[str, Any]]:
+        """Обработка через несколько моделей последовательно (sync)"""
         results = []
-        # Создаем системный промпт один раз
-        system_prompt = (
-            "Ты — эксперт в области разработки на Scala, Chisel, FIRRTL, Python, Tcl и проектирования цифровой аппаратуры "
-            "на Verilog/VHDL для Intel Quartus Prime. Твоя задача — проанализировать предоставленный "
-            "проект генератора, найти ошибки и сделать его полностью запускаемым."
-        )
+        prompts = self._build_unified_prompt(project_data)
 
-        user_query = (
-            "Все уже сделано так, как ты говоришь, продолжи генерировать до успешного исполнения проекта.\n\n"
-            f"Проект: {project_data}"
-        )
-
-        # Обрабатываем каждый запрос через разные модели
         for model_name in self.model_list:
             try:
-                # Создаем сообщение для модели
-                message = self.client.messages.create(
+                message = self.sync_client.messages.create(
                     model=model_name,
-                    max_tokens=4096,
-                    temperature=0.2,
-                    system=system_prompt,
+                    max_tokens=self.max_tokens,
+                    temperature=self.temperature,
+                    system=prompts["system"],
                     messages=[
                         {
                             "role": "user",
-                            "content": user_query
+                            "content": prompts["user"]
                         }
                     ]
                 )
 
-                # Сохраняем результат
                 result = {
                     "model": model_name,
-                    "response": message.content[0].text,
+                    "response": message.content[0].text if message.content else "",
                     "status": "success",
                     "response_length": len(message.content[0].text) if message.content else 0
                 }
                 results.append(result)
 
             except Exception as e:
-                # Если произошла ошибка, сохраняем информацию об ошибке
                 result = {
                     "model": model_name,
                     "response": None,
@@ -171,29 +156,33 @@ class ModelProcessor:
 
         return results
 
-    def generate_code_review(self, results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def generate_code_review(self, project_data: str, results: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Генерация code review на основе результатов всех моделей"""
         review_prompt = (
-            "Проанализируй результаты обработки проекта разными моделями и создай comprehensive code review.\n\n"
-            "Результаты:\n"
+            "You are an expert code reviewer. Analyze the project and the following model outputs "
+            "to provide a comprehensive code review.\n\n"
+            "PROJECT CODE:\n"
+            f"{project_data[:3000]}\n\n"  # Ограничиваем для контекста
+            "MODEL ANALYSIS RESULTS:\n"
         )
 
         for result in results:
-            review_prompt += f"Модель: {result['model']}\n"
-            review_prompt += f"Статус: {result['status']}\n"
+            review_prompt += f"\n--- Model: {result['model']} ---\n"
+            review_prompt += f"Status: {result['status']}\n"
             if result['status'] == 'success' and result['response']:
-                review_prompt += f"Ответ: {result['response'][:200]}...\n"  # Ограничиваем длину
+                review_prompt += f"Analysis: {result['response'][:500]}\n"
             elif result['status'] == 'error':
-                review_prompt += f"Ошибка: {result['error']}\n"
-            review_prompt += "\n"
+                review_prompt += f"Error: {result['error']}\n"
 
-        # Создаем запрос для code review
         try:
-            review_message = self.client.messages.create(
-                model="claude-3-5-sonnet",  # Используем более мощную модель для code review
+            # Используем первую модель для code review
+            review_model = self.model_list[0] if self.model_list else "claude-3-sonnet"
+            
+            review_message = self.sync_client.messages.create(
+                model=review_model,
                 max_tokens=2048,
                 temperature=0.3,
-                system="Ты — эксперт по code review. Проанализируй результаты и предоставь структурированную обратную связь.",
+                system="You are a senior code reviewer. Provide detailed, actionable feedback.",
                 messages=[
                     {
                         "role": "user",
@@ -203,121 +192,51 @@ class ModelProcessor:
             )
 
             return {
-                "review": review_message.content[0].text,
-                "summary": self.generate_summary(results),
-                "recommendations": self.generate_recommendations(results)
+                "review": review_message.content[0].text if review_message.content else "",
+                "summary": self._generate_summary(results),
+                "recommendations": self._generate_recommendations(results),
+                "status": "success"
             }
 
         except Exception as e:
             return {
-                "review": f"Ошибка при генерации code review: {str(e)}",
-                "summary": "Не удалось сгенерировать сводку",
-                "recommendations": "Не удалось сгенерировать рекомендации"
+                "review": f"Error generating code review: {str(e)}",
+                "summary": "Review generation failed",
+                "recommendations": "Unable to generate recommendations",
+                "status": "error",
+                "error": str(e)
             }
 
-    def generate_summary(self, results: List[Dict[str, Any]]) -> str:
+    def _generate_summary(self, results: List[Dict[str, Any]]) -> str:
         """Генерация сводки по результатам"""
         success_count = sum(1 for r in results if r['status'] == 'success')
         error_count = len(results) - success_count
 
-        summary = f"Обработано {len(results)} моделей: {success_count} успешных, {error_count} с ошибками\n\n"
+        summary = f"Processed {len(results)} models: {success_count} successful, {error_count} errors\n\n"
 
         for result in results:
+            status_icon = "[OK]" if result['status'] == 'success' else "[ERROR]"
+            summary += f"{status_icon} {result['model']}: "
             if result['status'] == 'success':
-                summary += f"✅ {result['model']}: Успешно\n"
+                summary += f"OK ({result.get('response_length', 0)} chars)\n"
             else:
-                summary += f"❌ {result['model']}: Ошибка - {result['error'][:100]}...\n"
+                summary += f"{result['error'][:60]}\n"
 
         return summary
 
-    def generate_recommendations(self, results: List[Dict[str, Any]]) -> str:
+    def _generate_recommendations(self, results: List[Dict[str, Any]]) -> str:
         """Генерация рекомендаций на основе результатов"""
         recommendations = []
 
-        # Проверяем наличие ошибок
         error_results = [r for r in results if r['status'] == 'error']
         if error_results:
-            recommendations.append("⚠️ Обратите внимание на ошибки в результатах моделей")
+            recommendations.append("[!] Check error results from models")
 
-        # Проверяем一致性
         success_results = [r for r in results if r['status'] == 'success']
         if len(success_results) > 1:
-            # Можно добавить логику для сравнения ответов
-            recommendations.append("📊 Проверьте согласованность ответов от разных моделей")
+            recommendations.append("[i] Compare responses from different models")
 
-        return "\n".join(recommendations) if recommendations else "✅ Все результаты положительные"
+        if not recommendations:
+            recommendations.append("[OK] All results are positive")
 
-
-# Пример использования
-async def main():
-    # Инициализация
-    processor = ModelProcessor(client, ["claude-3-haiku", "claude-3-sonnet", "claude-3-opus"])
-
-    # Параллельная обработка
-    project_data = "Ваш проект здесь"
-    results = await processor.process_with_models_parallel(project_data)
-
-    # Генерация code review
-    review = processor.generate_code_review(results)
-
-    print("Результаты:")
-    for result in results:
-        print(f"Модель: {result['model']}, Статус: {result['status']}")
-
-    print("\nCode Review:")
-    print(review['review'])
-
-
-# Если используете синхронный код
-def process_project_sync(project_data: str, client, model_list: List[str]) -> Dict[str, Any]:
-    """Синхронная версия для использования в синхронном коде"""
-    processor = ModelProcessor(client, model_list)
-
-    # Параллельная обработка
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    try:
-        results = loop.run_until_complete(processor.process_with_models_parallel(project_data))
-
-        # Генерация code review
-        review = processor.generate_code_review(results)
-
-        return {
-            "results": results,
-            "review": review
-        }
-    finally:
-        loop.close()
-
-
-# Использование:
-# async_result = await processor.process_with_models_parallel(project_data)
-# review_result = processor.generate_code_review(async_result)
-
-# Для синхронного вызова:
-# sync_result = process_project_sync(project_data, client, model_list)
-
-
-client_1 = anthropic.Anthropic(
-    api_key="sk-LgqiRR4lfipwfWA6vrs4xJvZOiEzYpsW",
-    base_url="https://api.proxyapi.ru/anthropic",
-)
-
-message_1 = client.messages.create(
-    model="claude-opus-4-8",
-    max_tokens=20000,
-    messages=[
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "text": "Проанализируй проект https://github.com/andrejstrogonov/processor/tree/quartus-generator и предложи изменения для исправления ошибок и сделать его запускаемым. Опиши пошагово, что нужно изменить, чтобы проект заработал."
-                }
-            ]
-        }
-    ]
-)
-
-print(message.content[0].text)
+        return "\n".join(recommendations)

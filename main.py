@@ -1,181 +1,176 @@
 import os
 import json
-import anthropic
+import asyncio
+import logging
+from pathlib import Path
+from typing import Dict, Any
 
-PROJECT_DIR = r"C:\Users\strog\PycharmProject\AgentAI"
-OUTPUT_FILE = os.path.join(PROJECT_DIR, "project_context.txt")
-
-VALID_EXTENSIONS = {
-    '.py', '.v', '.sv', '.vhd', '.vhdl', '.tcl',
-    '.md', '.json', '.yaml', '.yml', '.ini', '.cfg'
-}
-
-IGNORE_DIRS = {
-    '.git', '.idea', '__pycache__', 'venv', '.venv',
-    'db', 'incremental_db', 'simulation', 'greybox_tmp', '.qodo'
-}
+from ContextBuilder import ContextBuilder
+from ModelProcessor import ModelProcessor
+from ResultFormatter import ResultFormatter
+from UIInput import UIInput
 
 
-def generate_tree(current_dir, indent=""):
-    """Рекурсивно строит дерево проекта для визуализации структуры."""
-    tree_str = ""
-    try:
-        items = sorted(os.listdir(current_dir))
-    except PermissionError:
-        return ""
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(levelname)s] %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-    for item in items:
-        if item in IGNORE_DIRS:
-            continue
-        path = os.path.join(current_dir, item)
-        if os.path.isdir(path):
-            tree_str += f"{indent}├── [{item}/]\n"
-            tree_str += generate_tree(path, indent + "│   ")
+
+class ProjectAnalyzer:
+    def __init__(self, config_path: str = "config.json"):
+        self.config = self._load_config(config_path)
+        self.context_builder = ContextBuilder()
+        self.model_processor = ModelProcessor(self.config)
+        self.formatter = ResultFormatter()
+        self.ui = UIInput()
+
+    def _load_config(self, config_path: str) -> Dict[str, Any]:
+        """Load configuration from config.json"""
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            
+            # Load API key from environment variable
+            api_key = os.getenv('ANTHROPIC_API_KEY')
+            if not api_key:
+                raise ValueError("ANTHROPIC_API_KEY environment variable not set")
+            
+            config['api_key'] = api_key
+            return config
+        except Exception as e:
+            logger.error(f"Failed to load config: {e}")
+            raise
+
+    def analyze_project_sequential(self, project_dir: str) -> Dict[str, Any]:
+        """Analyze project using sequential model processing"""
+        logger.info(f"[*] Analyzing project sequentially: {project_dir}")
+        
+        # Build project context
+        logger.info("[*] Building project context...")
+        project_context = self.context_builder.build_prompt_context(project_dir)
+        
+        # Process with models sequentially
+        logger.info("[*] Processing with models sequentially...")
+        results = self.model_processor.process_with_models_sequential(project_context)
+        
+        # Display results
+        self.formatter.display_results(results)
+        
+        return {
+            "mode": "sequential",
+            "results": results,
+            "project_dir": project_dir
+        }
+
+    async def analyze_project_parallel(self, project_dir: str) -> Dict[str, Any]:
+        """Analyze project using parallel model processing"""
+        logger.info(f"[*] Analyzing project in parallel: {project_dir}")
+        
+        # Build project context
+        logger.info("[*] Building project context...")
+        project_context = self.context_builder.build_prompt_context(project_dir)
+        
+        # Process with models in parallel
+        logger.info("[*] Processing with models in parallel...")
+        results = await self.model_processor.process_with_models_parallel(project_context)
+        
+        # Display results
+        self.formatter.display_results(results)
+        
+        return {
+            "mode": "parallel",
+            "results": results,
+            "project_dir": project_dir
+        }
+
+    def code_review(self, project_dir: str, analysis_results: list = None) -> Dict[str, Any]:
+        """Generate code review for the project"""
+        logger.info(f"[*] Generating code review: {project_dir}")
+        
+        # Build project context
+        if not analysis_results:
+            logger.info("[*] Building project context...")
+            project_context = self.context_builder.build_prompt_context(project_dir)
+            
+            # First run analysis if not provided
+            logger.info("[*] Running initial analysis...")
+            analysis_results = self.model_processor.process_with_models_sequential(project_context)
         else:
-            ext = os.path.splitext(item)[1].lower()
-            if ext in VALID_EXTENSIONS:
-                tree_str += f"{indent}├── {item}\n"
-    return tree_str
+            project_context = self.context_builder.build_prompt_context(project_dir)
+        
+        # Generate code review
+        logger.info("[*] Generating code review...")
+        review = self.model_processor.generate_code_review(project_context, analysis_results)
+        
+        # Display review
+        self.formatter.display_code_review(review)
+        
+        return {
+            "mode": "code_review",
+            "review": review,
+            "project_dir": project_dir
+        }
 
-
-def collect_context():
-    """Сканирует весь проект и сохраняет контекст в строку и файл."""
-    print(f"[*] Сканирование: {PROJECT_DIR}")
-
-    if not os.path.exists(PROJECT_DIR):
-        raise FileNotFoundError(f"Путь не существует: {PROJECT_DIR}")
-
-    context_chunks = []
-    context_chunks.append("=== АНАЛИЗ ПРОЕКТА AgentAI ===\n\n")
-    context_chunks.append("=== СТРУКТУРА ПРОЕКТА ===\n")
-    context_chunks.append(f"[{os.path.basename(PROJECT_DIR)}/]\n")
-    context_chunks.append(generate_tree(PROJECT_DIR))
-    context_chunks.append("\n" + "=" * 40 + "\n\n")
-    context_chunks.append("=== СОДЕРЖИМОЕ ФАЙЛОВ ===\n\n")
-
-    for root, dirs, files in os.walk(PROJECT_DIR):
-        dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
-
-        for file in sorted(files):
-            ext = os.path.splitext(file)[1].lower()
-            if ext not in VALID_EXTENSIONS:
-                continue
-
-            full_path = os.path.join(root, file)
-            rel_path = os.path.relpath(full_path, PROJECT_DIR)
-
-            if full_path == OUTPUT_FILE:
-                continue
-
-            context_chunks.append(f"--- НАЧАЛО: {rel_path} ---\n")
-            try:
-                with open(full_path, "r", encoding="utf-8", errors="replace") as f:
-                    context_chunks.append(f.read())
-            except Exception as e:
-                context_chunks.append(f"[Ошибка: {str(e)}]\n")
-            context_chunks.append(f"\n--- КОНЕЦ: {rel_path} ---\n\n")
-
-    full_context = "".join(context_chunks)
-
-    with open(OUTPUT_FILE, "w", encoding="utf-8") as out:
-        out.write(full_context)
-
-    print(f"[OK] Контекст сохранен: {OUTPUT_FILE}")
-    return full_context
-
-
-def load_config():
-    """Загружает конфиг с API ключом."""
-    config_path = os.path.join(PROJECT_DIR, "config.json")
-    try:
-        with open(config_path, "r") as f:
-            config = json.load(f)
-        return config
-    except Exception as e:
-        print(f"[!] Не удалось загрузить config.json: {e}")
-        return {}
+    def save_results(self, results: Dict[str, Any], output_dir: str = ".") -> None:
+        """Save analysis results to files"""
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        mode = results.get('mode', 'unknown')
+        timestamp = Path.cwd().name
+        
+        # Save text results
+        if mode == "code_review":
+            text_file = output_path / f"code_review_{mode}.txt"
+            json_file = output_path / f"code_review_{mode}.json"
+            content = self.formatter.format_code_review(results.get('review', {}))
+            self.formatter.save_to_file(content, str(text_file))
+            self.formatter.save_json(results, str(json_file))
+        else:
+            text_file = output_path / f"analysis_{mode}.txt"
+            json_file = output_path / f"analysis_{mode}.json"
+            content = self.formatter.format_results(results.get('results', []))
+            self.formatter.save_to_file(content, str(text_file))
+            self.formatter.save_json(results, str(json_file))
 
 
 def main():
-    """Основная функция - собирает контекст и анализирует проект через единый промпт."""
-    print("[*] Запуск анализа проекта AgentAI...\n")
+    """Main entry point"""
+    import argparse
     
-    project_data = collect_context()
+    parser = argparse.ArgumentParser(description='Project Analyzer using Claude AI Models')
+    parser.add_argument('project_dir', help='Path to project directory to analyze')
+    parser.add_argument('--mode', choices=['sequential', 'parallel', 'review'], default='sequential',
+                       help='Analysis mode')
+    parser.add_argument('--output', default='.', help='Output directory for results')
+    parser.add_argument('--config', default='config.json', help='Path to config file')
     
-    config = load_config()
-    api_key = config.get("api_key", "")
-    base_url = config.get("base_url", "https://api.proxyapi.ru/anthropic")
-    
-    if not api_key:
-        print("[!] API ключ не найден в config.json")
-        return
-    
-    client = anthropic.Anthropic(
-        api_key=api_key,
-        base_url=base_url,
-    )
-    
-    # ЕДИНЫЙ ОБЪЕДИНЁННЫЙ ПРОМПТ (system + user в одном контексте)
-    unified_prompt = f"""Ты — эксперт в разработке на Python и архитектуре проектов.
-
-ЗАДАЧА:
-1. Проанализируй структуру и код проекта AgentAI
-2. Найди все ошибки и проблемы в коде
-3. Определи основные проблемы:
-   - Дублирование функций
-   - Неправильные пути к файлам
-   - Разделение логики
-   - Неверная структура промптов
-4. Предложи исправления для всех проблем
-
-КОНТЕКСТ ПРОЕКТА:
-
-{project_data}
-
-ТРЕБОВАНИЯ К ОТВЕТУ:
-- Кратко опиши найденные ошибки
-- Предложи исправленный main.py
-- Убедись, что все логика объединена в одну функцию main()
-- system_prompt и user_query должны быть объединены в единый промпт"""
-
-    print("[*] Отправка на анализ (claude-sonnet-4-6)...\n")
+    args = parser.parse_args()
     
     try:
-        message = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=4000,
-            messages=[
-                {
-                    "role": "user",
-                    "content": unified_prompt
-                }
-            ]
-        )
+        # Initialize analyzer
+        analyzer = ProjectAnalyzer(args.config)
         
-        response_text = message.content[0].text
-        print("=" * 70)
-        print("[+] АНАЛИЗ И РЕКОМЕНДАЦИИ:")
-        print("=" * 70)
+        # Run analysis based on mode
+        if args.mode == 'sequential':
+            logger.info("[*] Running in SEQUENTIAL mode")
+            results = analyzer.analyze_project_sequential(args.project_dir)
+        elif args.mode == 'parallel':
+            logger.info("[*] Running in PARALLEL mode")
+            results = asyncio.run(analyzer.analyze_project_parallel(args.project_dir))
+        elif args.mode == 'review':
+            logger.info("[*] Running in CODE REVIEW mode")
+            results = analyzer.code_review(args.project_dir)
         
-        # Сохраняем результат с правильной кодировкой
-        result_file = os.path.join(PROJECT_DIR, "analysis_result.txt")
-        with open(result_file, "w", encoding="utf-8") as f:
-            f.write("АНАЛИЗ ПРОЕКТА AGENTAI\n")
-            f.write("=" * 70 + "\n")
-            f.write(response_text)
-        
-        # Выводим только текст без проблемных символов
-        lines = response_text.split('\n')
-        for line in lines[:50]:  # Первые 50 строк
-            try:
-                print(line)
-            except UnicodeEncodeError:
-                print("[TEXT] (пропущена строка с проблемными символами)")
-        
-        print("\n[OK] Полный результат сохранен: " + result_file)
+        # Save results
+        analyzer.save_results(results, args.output)
+        logger.info("[OK] Analysis complete!")
         
     except Exception as e:
-        print(f"[!] Ошибка при отправке запроса: {e}")
+        logger.error(f"[ERROR] Analysis failed: {e}")
+        raise
 
 
 if __name__ == "__main__":
