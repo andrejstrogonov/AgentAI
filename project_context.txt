@@ -1,0 +1,972 @@
+=== АНАЛИЗ ПРОЕКТА AgentAI ===
+
+=== СТРУКТУРА ПРОЕКТА ===
+[AgentAI/]
+├── ContextBuilder.py
+├── ModelProcessor.py
+├── ProjectAnalyzer.py
+├── ResultFormatter.py
+├── UIInput.py
+├── config.json
+├── main.py
+├── new_main.py
+
+========================================
+
+=== СОДЕРЖИМОЕ ФАЙЛОВ ===
+
+--- НАЧАЛО: ContextBuilder.py ---
+import logging
+from pathlib import Path
+
+
+class ContextBuilder:
+    def __init__(self):
+        # Инициализация
+        self.logger = logging.getLogger(__name__)
+        self.valid_extensions = {
+            '.py', '.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.scss', '.json',
+            '.yaml', '.yml', '.md', '.txt', '.xml', '.sql', '.java', '.cpp', '.c',
+            '.h', '.hpp', '.go', '.rs', '.rb', '.php', '.sh', '.bash', '.pl', '.pm'
+        }
+        self.ignore_dirs = {
+            '__pycache__', '.git', 'node_modules', '.svn', '.hg', '.idea',
+            '.vscode', 'venv', '.venv', 'env', '.env', '__pycache__', '.pytest_cache',
+            'dist', 'build', '.tox', '.coverage', '.mypy_cache', '.DS_Store'
+        }
+        self.max_file_size = 1024 * 1024  # 1MB максимум для файлов
+
+    def build_project_context(self, project_dir):
+        """
+        Построение контекста проекта
+        """
+        project_path = Path(project_dir)
+        context_chunks = {
+            'metadata': {},
+            'tree_structure': '',
+            'file_contents': {},
+            'dependencies': {},
+            'cicd_configs': {},
+            'readme': '',
+            'license': '',
+            'stats': {}
+        }
+
+        try:
+            # Добавляем метаданные
+            self.add_metadata(context_chunks, project_path)
+
+            # Добавляем структуру проекта
+            self.add_tree_structure(context_chunks, project_path)
+
+            # Добавляем содержимое файлов
+            self.add_file_contents(context_chunks, project_path)
+
+            # Добавляем зависимости
+            self.add_dependencies(context_chunks, project_path)
+
+            # Добавляем CI/CD конфигурации
+            self.add_cicd_configs(context_chunks, project_path)
+
+            # Добавляем README и лицензию
+            self.add_readme_and_license(context_chunks, project_path)
+
+            # Добавляем статистику
+            self.add_statistics(context_chunks, project_path)
+
+        except Exception as e:
+            self.logger.error(f"Ошибка при построении контекста проекта: {e}")
+            raise
+
+        return context_chunks
+
+    def add_metadata(self, context_chunks):
+        pass
+
+    def add_tree_structure(self, context_chunks, project_dir):
+        # Добавление структуры проекта
+        pass
+
+    def add_file_contents(self, context_chunks, project_dir):
+        # Добавление содержимого файлов
+        pass
+
+--- КОНЕЦ: ContextBuilder.py ---
+
+--- НАЧАЛО: ModelProcessor.py ---
+import asyncio
+import logging
+from typing import List, Dict, Any
+
+import anthropic
+from anthropic import AsyncAnthropic, Anthropic
+
+
+class ModelProcessor:
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+        self.api_key = config.get("api_key")
+        self.base_url = config.get("base_url")
+        self.model_list = config.get("models", [])
+
+        # Инициализация клиентов
+        self.async_client = AsyncAnthropic(
+            api_key=self.api_key,
+            base_url=self.base_url
+        )
+        self.sync_client = Anthropic(
+            api_key=self.api_key,
+            base_url=self.base_url
+        )
+
+        self.logger = logging.getLogger(__name__)
+
+    async def process_with_models_parallel(self, project_data: str) -> List[Dict[str, Any]]:
+        """Обработка через несколько моделей параллельно с одним API ключом"""
+        if not self.model_list:
+            raise ValueError("Не указаны модели для обработки")
+
+        results = []
+
+        # Создаем системный промпт один раз
+        system_prompt = (
+            "Ты — эксперт в области разработки на Scala, Chisel, FIRRTL, Python, Tcl и проектирования цифровой аппаратуры "
+            "на Verilog/VHDL для Intel Quartus Prime. Твоя задача — проанализировать предоставленный "
+            "проект генератора, найти ошибки и сделать его полностью запускаемым."
+        )
+
+        user_query = (
+            "Все уже сделано так, как ты говоришь, продолжи генерировать до успешного исполнения проекта.\n\n"
+            f"Проект: {project_data}"
+        )
+
+        # Создаем задачи для параллельного выполнения
+        tasks = [
+            self._process_single_model(model_name, system_prompt, user_query)
+            for model_name in self.model_list
+        ]
+
+        # Выполняем все задачи параллельно
+        try:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Обрабатываем результаты
+            processed_results = []
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    processed_results.append({
+                        "model": self.model_list[i],
+                        "response": None,
+                        "status": "error",
+                        "error": str(result),
+                        "error_type": type(result).__name__,
+                        "timestamp": asyncio.get_event_loop().time()
+                    })
+                else:
+                    processed_results.append(result)
+
+            return processed_results
+
+        except Exception as e:
+            self.logger.error(f"Ошибка при параллельной обработке: {str(e)}")
+            raise
+
+    async def _process_single_model(self, model_name: str, system_prompt: str, user_query: str) -> Dict[str, Any]:
+        """Обработка одной модели"""
+        try:
+            # Создаем сообщение для модели
+            message = await self.async_client.messages.create(
+                model=model_name,
+                max_tokens=4096,
+                temperature=0.2,
+                system=system_prompt,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": user_query
+                    }
+                ]
+            )
+
+            # Сохраняем результат
+            response_text = message.content[0].text if message.content else ""
+
+            result = {
+                "model": model_name,
+                "response": response_text,
+                "status": "success",
+                "response_length": len(response_text),
+                "timestamp": asyncio.get_event_loop().time()
+            }
+
+            return result
+
+        except Exception as e:
+            # Если произошла ошибка, сохраняем информацию об ошибке
+            result = {
+                "model": model_name,
+                "response": None,
+                "status": "error",
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "timestamp": asyncio.get_event_loop().time()
+            }
+            return result
+
+    def _process_with_models_sequentially(self, project_data: str) -> List[Dict[str, Any]]:
+        """Обработка через несколько моделей последовательно с одним API ключом (оригинальная версия)"""
+        results = []
+        # Создаем системный промпт один раз
+        system_prompt = (
+            "Ты — эксперт в области разработки на Scala, Chisel, FIRRTL, Python, Tcl и проектирования цифровой аппаратуры "
+            "на Verilog/VHDL для Intel Quartus Prime. Твоя задача — проанализировать предоставленный "
+            "проект генератора, найти ошибки и сделать его полностью запускаемым."
+        )
+
+        user_query = (
+            "Все уже сделано так, как ты говоришь, продолжи генерировать до успешного исполнения проекта.\n\n"
+            f"Проект: {project_data}"
+        )
+
+        # Обрабатываем каждый запрос через разные модели
+        for model_name in self.model_list:
+            try:
+                # Создаем сообщение для модели
+                message = self.client.messages.create(
+                    model=model_name,
+                    max_tokens=4096,
+                    temperature=0.2,
+                    system=system_prompt,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": user_query
+                        }
+                    ]
+                )
+
+                # Сохраняем результат
+                result = {
+                    "model": model_name,
+                    "response": message.content[0].text,
+                    "status": "success",
+                    "response_length": len(message.content[0].text) if message.content else 0
+                }
+                results.append(result)
+
+            except Exception as e:
+                # Если произошла ошибка, сохраняем информацию об ошибке
+                result = {
+                    "model": model_name,
+                    "response": None,
+                    "status": "error",
+                    "error": str(e),
+                    "error_type": type(e).__name__
+                }
+                results.append(result)
+
+        return results
+
+    def generate_code_review(self, results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Генерация code review на основе результатов всех моделей"""
+        review_prompt = (
+            "Проанализируй результаты обработки проекта разными моделями и создай comprehensive code review.\n\n"
+            "Результаты:\n"
+        )
+
+        for result in results:
+            review_prompt += f"Модель: {result['model']}\n"
+            review_prompt += f"Статус: {result['status']}\n"
+            if result['status'] == 'success' and result['response']:
+                review_prompt += f"Ответ: {result['response'][:200]}...\n"  # Ограничиваем длину
+            elif result['status'] == 'error':
+                review_prompt += f"Ошибка: {result['error']}\n"
+            review_prompt += "\n"
+
+        # Создаем запрос для code review
+        try:
+            review_message = self.client.messages.create(
+                model="claude-3-5-sonnet",  # Используем более мощную модель для code review
+                max_tokens=2048,
+                temperature=0.3,
+                system="Ты — эксперт по code review. Проанализируй результаты и предоставь структурированную обратную связь.",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": review_prompt
+                    }
+                ]
+            )
+
+            return {
+                "review": review_message.content[0].text,
+                "summary": self.generate_summary(results),
+                "recommendations": self.generate_recommendations(results)
+            }
+
+        except Exception as e:
+            return {
+                "review": f"Ошибка при генерации code review: {str(e)}",
+                "summary": "Не удалось сгенерировать сводку",
+                "recommendations": "Не удалось сгенерировать рекомендации"
+            }
+
+    def generate_summary(self, results: List[Dict[str, Any]]) -> str:
+        """Генерация сводки по результатам"""
+        success_count = sum(1 for r in results if r['status'] == 'success')
+        error_count = len(results) - success_count
+
+        summary = f"Обработано {len(results)} моделей: {success_count} успешных, {error_count} с ошибками\n\n"
+
+        for result in results:
+            if result['status'] == 'success':
+                summary += f"✅ {result['model']}: Успешно\n"
+            else:
+                summary += f"❌ {result['model']}: Ошибка - {result['error'][:100]}...\n"
+
+        return summary
+
+    def generate_recommendations(self, results: List[Dict[str, Any]]) -> str:
+        """Генерация рекомендаций на основе результатов"""
+        recommendations = []
+
+        # Проверяем наличие ошибок
+        error_results = [r for r in results if r['status'] == 'error']
+        if error_results:
+            recommendations.append("⚠️ Обратите внимание на ошибки в результатах моделей")
+
+        # Проверяем一致性
+        success_results = [r for r in results if r['status'] == 'success']
+        if len(success_results) > 1:
+            # Можно добавить логику для сравнения ответов
+            recommendations.append("📊 Проверьте согласованность ответов от разных моделей")
+
+        return "\n".join(recommendations) if recommendations else "✅ Все результаты положительные"
+
+
+# Пример использования
+async def main():
+    # Инициализация
+    processor = ModelProcessor(client, ["claude-3-haiku", "claude-3-sonnet", "claude-3-opus"])
+
+    # Параллельная обработка
+    project_data = "Ваш проект здесь"
+    results = await processor.process_with_models_parallel(project_data)
+
+    # Генерация code review
+    review = processor.generate_code_review(results)
+
+    print("Результаты:")
+    for result in results:
+        print(f"Модель: {result['model']}, Статус: {result['status']}")
+
+    print("\nCode Review:")
+    print(review['review'])
+
+
+# Если используете синхронный код
+def process_project_sync(project_data: str, client, model_list: List[str]) -> Dict[str, Any]:
+    """Синхронная версия для использования в синхронном коде"""
+    processor = ModelProcessor(client, model_list)
+
+    # Параллельная обработка
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    try:
+        results = loop.run_until_complete(processor.process_with_models_parallel(project_data))
+
+        # Генерация code review
+        review = processor.generate_code_review(results)
+
+        return {
+            "results": results,
+            "review": review
+        }
+    finally:
+        loop.close()
+
+
+# Использование:
+# async_result = await processor.process_with_models_parallel(project_data)
+# review_result = processor.generate_code_review(async_result)
+
+# Для синхронного вызова:
+# sync_result = process_project_sync(project_data, client, model_list)
+
+
+client_1 = anthropic.Anthropic(
+    api_key="sk-LgqiRR4lfipwfWA6vrs4xJvZOiEzYpsW",
+    base_url="https://api.proxyapi.ru/anthropic",
+)
+
+message_1 = client.messages.create(
+    model="claude-opus-4-8",
+    max_tokens=20000,
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Проанализируй проект https://github.com/andrejstrogonov/processor/tree/quartus-generator и предложи изменения для исправления ошибок и сделать его запускаемым. Опиши пошагово, что нужно изменить, чтобы проект заработал."
+                }
+            ]
+        }
+    ]
+)
+
+print(message.content[0].text)
+--- КОНЕЦ: ModelProcessor.py ---
+
+--- НАЧАЛО: ProjectAnalyzer.py ---
+import json
+import logging
+import os
+from pathlib import Path
+
+
+class ProjectAnalyzer:
+    def __init__(self, project_dir, output_file, valid_extensions, ignore_dirs):
+        # Инициализация параметров
+        self.project_dir = Path(project_dir)
+        self.output_file = output_file
+        self.valid_extensions = set(valid_extensions)
+        self.ignore_dirs = set(ignore_dirs)
+        self.context = {}
+        self.cicd_configs = {}
+
+        # Настройка логирования
+        logging.basicConfig(level=logging.INFO)
+        self.logger = logging.getLogger(__name__)
+
+    def generate_tree(self, current_dir, indent=""):
+        """Рекурсивное построение дерева проекта"""
+        tree = ""
+        try:
+            items = sorted(os.listdir(current_dir))
+            for i, item in enumerate(items):
+                item_path = os.path.join(current_dir, item)
+                is_last = (i == len(items) - 1)
+
+                if item in self.ignore_dirs:
+                    continue
+
+                if os.path.isdir(item_path):
+                    tree += f"{indent}{'└── ' if is_last else '├── '}{item}/\n"
+                    tree += self.generate_tree(item_path, indent + ("    " if is_last else "│   "))
+                else:
+                    tree += f"{indent}{'└── ' if is_last else '├── '}{item}\n"
+        except PermissionError:
+            self.logger.warning(f"Нет доступа к директории: {current_dir}")
+
+        return tree
+
+    def collect_context(self):
+        """Сканирование проекта и сбор контекста"""
+        self.context = {
+            'project_structure': self._build_project_structure(),
+            'file_stats': self._count_files_by_type(),
+            'cicd_configs': self._find_cicd_configs(),
+            'dependencies': self._collect_dependencies(),
+            'readme': self._read_readme(),
+            'license': self._find_license()
+        }
+        return self.context
+
+    def _build_project_structure(self):
+        """Построение структуры проекта"""
+        structure = {}
+        for root, dirs, files in os.walk(self.project_dir):
+            # Пропуск игнорируемых директорий
+            dirs[:] = [d for d in dirs if d not in self.ignore_dirs]
+
+            # Определяем уровень вложенности
+            rel_path = os.path.relpath(root, self.project_dir)
+            if rel_path == '.':
+                current_level = structure
+            else:
+                parts = rel_path.split(os.sep)
+                current_level = structure
+                for part in parts:
+                    if part not in current_level:
+                        current_level[part] = {}
+                    current_level = current_level[part]
+
+            # Добавляем файлы
+            for file in files:
+                if any(file.endswith(ext) for ext in self.valid_extensions):
+                    current_level[file] = {
+                        'size': os.path.getsize(os.path.join(root, file)),
+                        'type': 'file'
+                    }
+
+        return structure
+
+    def _count_files_by_type(self):
+        """Подсчет файлов по типам"""
+        stats = {}
+        for root, dirs, files in os.walk(self.project_dir):
+            dirs[:] = [d for d in dirs if d not in self.ignore_dirs]
+
+            for file in files:
+                ext = os.path.splitext(file)[1]
+                if ext:
+                    stats[ext] = stats.get(ext, 0) + 1
+        return stats
+
+    def _find_cicd_configs(self):
+        """Поиск конфигурационных файлов CI/CD"""
+        cicd_files = {}
+
+        # Поддерживаемые файлы CI/CD
+        cicd_patterns = {
+            '.github/workflows': '.github/workflows/',
+            '.gitlab-ci.yml': '.gitlab-ci.yml',
+            'Jenkinsfile': 'Jenkinsfile',
+            '.travis.yml': '.travis.yml',
+            '.circleci/config.yml': '.circleci/config.yml',
+            'azure-pipelines.yml': 'azure-pipelines.yml',
+            '.buildkite/pipeline.yml': '.buildkite/pipeline.yml',
+            'Makefile': 'Makefile',
+            'Dockerfile': 'Dockerfile'
+        }
+
+        for pattern, path in cicd_patterns.items():
+            if pattern == '.github/workflows':
+                workflows_dir = self.project_dir / '.github' / 'workflows'
+                if workflows_dir.exists():
+                    cicd_files['github_workflows'] = []
+                    for workflow in workflows_dir.glob('*.yml'):
+                        cicd_files['github_workflows'].append({
+                            'name': workflow.name,
+                            'path': str(workflow.relative_to(self.project_dir))
+                        })
+            elif (self.project_dir / path).exists():
+                cicd_files[os.path.basename(path).replace('.', '_')] = str(path)
+            elif (self.project_dir / pattern).exists():
+                cicd_files[os.path.basename(pattern).replace('.', '_')] = str(pattern)
+
+        return cicd_files
+
+    def _collect_dependencies(self):
+        """Сбор информации о зависимостях"""
+        deps = {}
+
+        # Пытаемся найти файлы зависимостей
+        dep_files = ['package.json', 'requirements.txt', 'Gemfile', 'pom.xml', 'build.gradle', 'go.mod', 'Cargo.toml']
+
+        for dep_file in dep_files:
+            file_path = self.project_dir / dep_file
+            if file_path.exists():
+                try:
+                    if dep_file == 'package.json':
+                        with open(file_path, 'r') as f:
+                            data = json.load(f)
+                            deps['npm'] = {
+                                'dependencies': list(data.get('dependencies', {}).keys()),
+                                'dev_dependencies': list(data.get('devDependencies', {}).keys())
+                            }
+                    elif dep_file == 'requirements.txt':
+                        with open(file_path, 'r') as f:
+                            deps['pip'] = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+                    elif dep_file == 'Gemfile':
+                        with open(file_path, 'r') as f:
+                            content = f.read()
+                            deps['ruby'] = [line for line in content.split('\n') if
+                                            'gem' in line and not line.startswith('#')]
+                    elif dep_file == 'pom.xml':
+                        with open(file_path, 'r') as f:
+                            content = f.read()
+                            deps['maven'] = 'maven'  # Простое указание типа
+                    elif dep_file == 'build.gradle':
+                        deps['gradle'] = 'gradle'
+                    elif dep_file == 'go.mod':
+                        deps['go'] = 'go'
+                    elif dep_file == 'Cargo.toml':
+                        deps['rust'] = 'rust'
+                except Exception as e:
+                    self.logger.warning(f"Ошибка при чтении {dep_file}: {e}")
+
+        return deps
+
+    def _read_readme(self):
+        """Чтение README файла"""
+        readme_files = ['README.md', 'README.rst', 'README.txt', 'readme.md']
+        for readme_file in readme_files:
+            file_path = self.project_dir / readme_file
+            if file_path.exists():
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        return content[:500] + '...' if len(content) > 500 else content
+                except Exception as e:
+                    self.logger.warning(f"Ошибка чтения README: {e}")
+        return None
+
+    def _find_license(self):
+        """Поиск лицензионного файла"""
+        license_files = ['LICENSE', 'LICENSE.md', 'LICENSE.txt', 'COPYING']
+        for license_file in license_files:
+            file_path = self.project_dir / license_file
+            if file_path.exists():
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        return content[:200] + '...' if len(content) > 200 else content
+                except Exception as e:
+                    self.logger.warning(f"Ошибка чтения лицензии: {e}")
+        return None
+
+    def run_cicd_pipeline(self, pipeline_type='auto'):
+        """Запуск CI/CD pipeline (для тестирования)"""
+        try:
+            if pipeline_type == 'auto':
+                # Определяем тип CI/CD автоматически
+                if 'github_workflows' in self.context['cicd_configs']:
+                    pipeline_type = 'github'
+                elif 'gitlab_ci_yml' in self.context['cicd_configs']:
+                    pipeline_type = 'gitlab'
+                elif 'jenkinsfile' in self.context['cicd_configs']:
+                    pipeline_type = 'jenkins'
+                else:
+                    self.logger.warning("CI/CD конфигурации не найдены")
+                    return False
+
+            # Выполнение pipeline в зависимости от типа
+            if pipeline_type == 'github':
+                self.logger.info("Запуск GitHub Actions pipeline")
+                # Это будет виртуальный запуск для демонстрации
+                return self._simulate_github_pipeline()
+            elif pipeline_type == 'gitlab':
+                self.logger.info("Запуск GitLab CI pipeline")
+                return self._simulate_gitlab_pipeline()
+            elif pipeline_type == 'jenkins':
+                self.logger.info("Запуск Jenkins pipeline")
+                return self._simulate_jenkins_pipeline()
+
+        except Exception as e:
+            self.logger.error(f"Ошибка запуска CI/CD pipeline: {e}")
+            return False
+
+    def _simulate_github_pipeline(self):
+        """Симуляция запуска GitHub Actions pipeline"""
+        # Здесь можно реализовать реальный запуск или проверку
+        print("Симуляция запуска GitHub Actions pipeline...")
+        print("Проверка конфигурации...")
+        print("Запуск тестов...")
+        print("Сбор метрик качества кода...")
+        print("Генерация отчетов...")
+        return True
+
+    def _simulate_gitlab_pipeline(self):
+        """Симуляция запуска GitLab CI pipeline"""
+        print("Симуляция запуска GitLab CI pipeline...")
+        print("Проверка конфигурации...")
+        print("Запуск тестов...")
+        print("Проверка безопасности...")
+        print("Деплой в staging...")
+        return True
+
+    def _simulate_jenkins_pipeline(self):
+        """Симуляция запуска Jenkins pipeline"""
+        print("Симуляция запуска Jenkins pipeline...")
+        print("Сбор данных о проекте...")
+        print("Запуск unit тестов...")
+        print("Запуск integration тестов...")
+        print("Проверка покрытия кода...")
+        return True
+
+    def get_cicd_status(self):
+        """Получение статуса CI/CD конфигураций"""
+        return {
+            'has_github_actions': 'github_workflows' in self.context['cicd_configs'],
+            'has_gitlab_ci': 'gitlab_ci_yml' in self.context['cicd_configs'],
+            'has_jenkinsfile': 'jenkinsfile' in self.context['cicd_configs'],
+            'has_cicd_config': len(self.context['cicd_configs']) > 0,
+            'cicd_configs': self.context['cicd_configs']
+        }
+
+    def export_context(self):
+        """Экспорт контекста в файл"""
+        with open(self.output_file, 'w', encoding='utf-8') as f:
+            json.dump(self.context, f, indent=2, ensure_ascii=False)
+        self.logger.info(f"Контекст сохранен в {self.output_file}")
+
+    def analyze_and_export(self):
+        """Полный анализ и экспорт"""
+        self.collect_context()
+        self.export_context()
+        return self.context
+
+    def get_project_summary(self):
+        """Получение краткого резюме проекта с CI/CD информацией"""
+        return {
+            'project_name': self.project_dir.name,
+            'total_files': sum(1 for _ in self.project_dir.rglob('*') if _.is_file()),
+            'cicd_status': self.get_cicd_status(),
+            'dependencies_count': len(self.context.get('dependencies', {})),
+            'supported_languages': list(self.context.get('file_stats', {}).keys())
+        }
+
+
+# Пример использования:
+if __name__ == "__main__":
+    # Инициализация анализатора
+    analyzer = ProjectAnalyzer(
+        project_dir=".",
+        output_file="project_context.json",
+        valid_extensions=['.py', '.js', '.html', '.css', '.md'],
+        ignore_dirs=['__pycache__', '.git', 'node_modules', 'venv']
+    )
+
+    # Сбор контекста
+    context = analyzer.collect_context()
+
+    # Показать CI/CD информацию
+    print("CI/CD Конфигурации:")
+    print(json.dumps(analyzer.get_cicd_status(), indent=2))
+
+    # Показать краткое резюме
+    print("\nКраткое резюме:")
+    print(json.dumps(analyzer.get_project_summary(), indent=2))
+
+    # Запуск CI/CD pipeline (для демонстрации)
+    print("\nЗапуск CI/CD pipeline:")
+    analyzer.run_cicd_pipeline()
+
+--- КОНЕЦ: ProjectAnalyzer.py ---
+
+--- НАЧАЛО: ResultFormatter.py ---
+class ResultFormatter:
+    def __init__(self):
+        # Инициализация
+        pass
+
+    def format_results(self, results):
+        # Форматирование результатов
+        pass
+
+    def display_results(self, results):
+        # Вывод результатов в консоль
+        pass
+
+--- КОНЕЦ: ResultFormatter.py ---
+
+--- НАЧАЛО: UIInput.py ---
+from ResultFormatter import ResultFormatter
+
+
+class UIInput:
+    def prompts(self,system_prompt,user_prompt):
+        system_prompt = (
+            "Ты — эксперт в области разработки на Scala, Chisel, FIRRTL, Python, Tcl и проектирования цифровой аппаратуры "
+            "на Verilog/VHDL для Intel Quartus Prime. Твоя задача — проанализировать предоставленный "
+            "проект генератора, найти ошибки и сделать его полностью запускаемым."
+        )
+
+        user_query = (
+            "Все уже сделано так, как ты говоришь, продолжи генерировать до успешного исполнения проекта.\n\n"
+            f"Проект: {project_data}"
+        )
+        return ResultFormatter.display_results()
+--- КОНЕЦ: UIInput.py ---
+
+--- НАЧАЛО: config.json ---
+{
+    "api_key": "sk-LgqiRR4lfipwfWA6vrs4xJvZOiEzYpsW",
+    "base_url": "https://api.proxyapi.ru/anthropic",
+    "models": ["claude-3-sonnet", "claude-3-opus"]
+}
+
+--- КОНЕЦ: config.json ---
+
+--- НАЧАЛО: main.py ---
+import os
+import json
+import anthropic
+
+PROJECT_DIR = r"C:\Users\strog\PycharmProject\AgentAI"
+OUTPUT_FILE = os.path.join(PROJECT_DIR, "project_context.txt")
+
+VALID_EXTENSIONS = {
+    '.py', '.v', '.sv', '.vhd', '.vhdl', '.tcl',
+    '.md', '.json', '.yaml', '.yml', '.ini', '.cfg'
+}
+
+IGNORE_DIRS = {
+    '.git', '.idea', '__pycache__', 'venv', '.venv',
+    'db', 'incremental_db', 'simulation', 'greybox_tmp', '.qodo'
+}
+
+
+def generate_tree(current_dir, indent=""):
+    """Рекурсивно строит дерево проекта для визуализации структуры."""
+    tree_str = ""
+    try:
+        items = sorted(os.listdir(current_dir))
+    except PermissionError:
+        return ""
+
+    for item in items:
+        if item in IGNORE_DIRS:
+            continue
+        path = os.path.join(current_dir, item)
+        if os.path.isdir(path):
+            tree_str += f"{indent}├── [{item}/]\n"
+            tree_str += generate_tree(path, indent + "│   ")
+        else:
+            ext = os.path.splitext(item)[1].lower()
+            if ext in VALID_EXTENSIONS:
+                tree_str += f"{indent}├── {item}\n"
+    return tree_str
+
+
+def collect_context():
+    """Сканирует весь проект и сохраняет контекст в строку и файл."""
+    print(f"[*] Сканирование: {PROJECT_DIR}")
+
+    if not os.path.exists(PROJECT_DIR):
+        raise FileNotFoundError(f"Путь не существует: {PROJECT_DIR}")
+
+    context_chunks = []
+    context_chunks.append("=== АНАЛИЗ ПРОЕКТА AgentAI ===\n\n")
+    context_chunks.append("=== СТРУКТУРА ПРОЕКТА ===\n")
+    context_chunks.append(f"[{os.path.basename(PROJECT_DIR)}/]\n")
+    context_chunks.append(generate_tree(PROJECT_DIR))
+    context_chunks.append("\n" + "=" * 40 + "\n\n")
+    context_chunks.append("=== СОДЕРЖИМОЕ ФАЙЛОВ ===\n\n")
+
+    for root, dirs, files in os.walk(PROJECT_DIR):
+        dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
+
+        for file in sorted(files):
+            ext = os.path.splitext(file)[1].lower()
+            if ext not in VALID_EXTENSIONS:
+                continue
+
+            full_path = os.path.join(root, file)
+            rel_path = os.path.relpath(full_path, PROJECT_DIR)
+
+            if full_path == OUTPUT_FILE:
+                continue
+
+            context_chunks.append(f"--- НАЧАЛО: {rel_path} ---\n")
+            try:
+                with open(full_path, "r", encoding="utf-8", errors="replace") as f:
+                    context_chunks.append(f.read())
+            except Exception as e:
+                context_chunks.append(f"[Ошибка: {str(e)}]\n")
+            context_chunks.append(f"\n--- КОНЕЦ: {rel_path} ---\n\n")
+
+    full_context = "".join(context_chunks)
+
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as out:
+        out.write(full_context)
+
+    print(f"[OK] Контекст сохранен: {OUTPUT_FILE}")
+    return full_context
+
+
+def load_config():
+    """Загружает конфиг с API ключом."""
+    config_path = os.path.join(PROJECT_DIR, "config.json")
+    try:
+        with open(config_path, "r") as f:
+            config = json.load(f)
+        return config
+    except Exception as e:
+        print(f"[!] Не удалось загрузить config.json: {e}")
+        return {}
+
+
+def main():
+    """Основная функция - собирает контекст и анализирует проект через единый промпт."""
+    print("[*] Запуск анализа проекта AgentAI...\n")
+    
+    project_data = collect_context()
+    
+    config = load_config()
+    api_key = config.get("api_key", "")
+    base_url = config.get("base_url", "https://api.proxyapi.ru/anthropic")
+    
+    if not api_key:
+        print("[!] API ключ не найден в config.json")
+        return
+    
+    client = anthropic.Anthropic(
+        api_key=api_key,
+        base_url=base_url,
+    )
+    
+    # ЕДИНЫЙ ОБЪЕДИНЁННЫЙ ПРОМПТ (system + user в одном контексте)
+    unified_prompt = f"""Ты — эксперт в разработке на Python и архитектуре проектов.
+
+ЗАДАЧА:
+1. Проанализируй структуру и код проекта AgentAI
+2. Найди все ошибки и проблемы в коде
+3. Определи основные проблемы:
+   - Дублирование функций
+   - Неправильные пути к файлам
+   - Разделение логики
+   - Неверная структура промптов
+4. Предложи исправления для всех проблем
+
+КОНТЕКСТ ПРОЕКТА:
+
+{project_data}
+
+ТРЕБОВАНИЯ К ОТВЕТУ:
+- Кратко опиши найденные ошибки
+- Предложи исправленный main.py
+- Убедись, что все логика объединена в одну функцию main()
+- system_prompt и user_query должны быть объединены в единый промпт"""
+
+    print("[*] Отправка на анализ (claude-sonnet-4-6)...\n")
+    
+    try:
+        message = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=4000,
+            messages=[
+                {
+                    "role": "user",
+                    "content": unified_prompt
+                }
+            ]
+        )
+        
+        response_text = message.content[0].text
+        print("=" * 70)
+        print("[+] АНАЛИЗ И РЕКОМЕНДАЦИИ:")
+        print("=" * 70)
+        
+        # Сохраняем результат с правильной кодировкой
+        result_file = os.path.join(PROJECT_DIR, "analysis_result.txt")
+        with open(result_file, "w", encoding="utf-8") as f:
+            f.write("АНАЛИЗ ПРОЕКТА AGENTAI\n")
+            f.write("=" * 70 + "\n")
+            f.write(response_text)
+        
+        # Выводим только текст без проблемных символов
+        lines = response_text.split('\n')
+        for line in lines[:50]:  # Первые 50 строк
+            try:
+                print(line)
+            except UnicodeEncodeError:
+                print("[TEXT] (пропущена строка с проблемными символами)")
+        
+        print("\n[OK] Полный результат сохранен: " + result_file)
+        
+    except Exception as e:
+        print(f"[!] Ошибка при отправке запроса: {e}")
+
+
+if __name__ == "__main__":
+    main()
+--- КОНЕЦ: main.py ---
+
+--- НАЧАЛО: new_main.py ---
+
+--- КОНЕЦ: new_main.py ---
+

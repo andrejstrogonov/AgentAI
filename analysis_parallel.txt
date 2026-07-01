@@ -1,0 +1,47 @@
+
+======================================================================
+ANALYSIS RESULTS
+======================================================================
+
+[1] Model: claude-sonnet-4-6
+    Status: success
+    Response: # Comprehensive Code Analysis Report
+
+## Executive Summary
+
+The project is a Python-based AI code analysis tool ("AgentAI") that uses Anthropic's Claude API to analyze codebases. The project contains **critical bugs, incomplete implementations, truncated files, architectural inconsistencies, and security vulnerabilities** that prevent it from functioning correctly in its current state.
+
+---
+
+## 1. Critical Errors
+
+### 1.1 `ContextBuilder.py` — Truncated File & Missing Implementations
+
+**Error 1:...
+    Length: 14176 chars
+
+
+[2] Model: claude-opus-4-1
+    Status: success
+    Response: # Comprehensive Code Analysis Report
+
+## 🔴 Critical Errors and Issues Found
+
+### 1. **ContextBuilder.py - Truncated File**
+The file is **cut off mid-statement** at line ~94:
+```python
+context_chu  # Incomplete - causes SyntaxError
+```
+
+### 2. **ModelProcessor.py - Truncated File**
+The file is **incomplete** - missing closing brackets and method implementations.
+
+### 3. **Method Signature Mismatches**
+
+#### ContextBuilder.py
+```python
+# Called with 2 arguments:
+self.add_metadata(context_chunks, p...
+    Length: 15194 chars
+
+======================================================================

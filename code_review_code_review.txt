@@ -1,0 +1,239 @@
+
+======================================================================
+CODE REVIEW
+======================================================================
+
+=== REVIEW ===
+# Comprehensive Code Review Report
+
+## Preliminary Assessment
+
+Both models (claude-sonnet-4-6 and claude-opus-4-1) correctly identified the core issues but their analyses were **themselves truncated**, which is ironic given the subject matter. Below is a complete, authoritative review.
+
+---
+
+## 1. Critical Errors
+
+### 1.1 `ContextBuilder.py` — File Truncation (Fatal)
+
+```python
+# Line shown at end of file:
+if (project_path / 'requirements.txt').exists():
+    return '   # ← STRING NEVER CLOSED, FILE ENDS HERE
+```
+
+**Severity:** 🔴 CRITICAL — `SyntaxError` on import; entire application fails to start.
+
+**Issues cascading from this:**
+- `_detect_project_type()` is incomplete — no return value for non-Node.js/non-Python projects
+- All methods referenced in `build_project_context()` (`add_tree_structure`, `add_file_contents`, `add_dependencies`, `add_cicd_configs`, `add_readme_and_license`, `add_statistics`) are **never defined** in the visible code
+- No fallback/default return in `_detect_project_type()`
+
+**Fix:**
+```python
+def _detect_project_type(self, project_path):
+    """Determine project type based on indicator files."""
+    type_indicators = {
+        'package.json': 'Node.js',
+        'requirements.txt': 'Python',
+        'Pipfile': 'Python (Pipenv)',
+        'pyproject.toml': 'Python (Modern)',
+        'pom.xml': 'Java (Maven)',
+        'build.gradle': 'Java (Gradle)',
+        'go.mod': 'Go',
+        'Cargo.toml': 'Rust',
+        'composer.json': 'PHP',
+        'Gemfile': 'Ruby',
+    }
+    for indicator, project_type in type_indicators.items():
+        if (project_path / indicator).exists():
+            return project_type
+    return 'Unknown'  # Always provide a default return
+```
+
+---
+
+### 1.2 Duplicate Entry in `ignore_dirs` Set
+
+```python
+self.ignore_dirs = {
+    '__pycache__', '.git', 'node_modules', ...
+    '__pycache__',  # ← DUPLICATE — silent bug, misleading to readers
+    ...
+}
+```
+
+**Severity:** 🟡 MEDIUM — Python sets silently deduplicate, so no runtime error, but it signals poor code quality and maintenance issues.
+
+**Fix:** Remove the duplicate `'__pycache__'` entry.
+
+---
+
+### 1.3 Missing File: `new_main.py`
+
+The project structure shows both `main.py` and `new_main.py`. This strongly suggests:
+- An incomplete refactor was abandoned mid-way
+- Dead code exists in one of the two files
+- No clear entry point is documented
+
+**Severity:** 🟡 MEDIUM — Architectural confusion; contributors won't know which file to use.
+
+**Fix:** Delete the obsolete file, or clearly document the migration path in `README_FULL.md`.
+
+---
+
+### 1.4 Security Vulnerability — `.env.example` Handling
+
+```python
+self.ignore_dirs = {
+    ...
+    '.env',   # ← Ignores .env directory, NOT .env files
+    ...
+}
+```
+
+**Severity:** 🔴 CRITICAL — The `ignore_dirs` set is checked against **directory names**, not file names. A `.env` *file* containing API keys will be read and potentially included in the context sent to the AI model.
+
+**Fix:**
+```python
+# Separate concerns clearly:
+self.ignore_dirs = {
+    '__pycache__', '.git', 'node_modules', '.svn', '.hg',
+    '.idea', '.vscode', 'venv', '.venv', 'env',
+    '.pytest_cache', 'dist', 'build', '.tox',
+    '.mypy_cache', '.DS_Store', '.qodo'
+}
+
+self.ignore_files = {
+    '.env', '.env.local', '.env.production',
+    '.env.development', '*.pem', '*.key', '*.secret'
+}
+
+# In file traversal:
+def _should_ignore_file(self, file_path: Path) -> bool:
+    return file_path.name in self.ignore_files or \
+           any(part in self.ignore_dirs for part in file_path.parts)
+```
+
+---
+
+### 1.5 `max_file_size` — No Enforcement Visible
+
+```python
+self.max_file_size = 1024 * 1024  # 1MB
+```
+
+**Severity:** 🟡 MEDIUM — The limit is defined but since `add_file_contents()` is in the truncated portion, we cannot confirm it's enforced. If not enforced, large files will cause memory issues or API token limit errors.
+
+**Required implementation:**
+```python
+def _read_file_safely(self, file_path: Path) -> str | None:
+    """Read file with size guard and encoding fallback."""
+    if file_path.stat().st_size > self.max_file_size:
+        self.logger.warning(
+            f"Skipping {file_path}: exceeds {self.max_file_size} byte limit"
+        )
+        return None
+    
+    for encoding in ('utf-8', 'latin-1', 'cp1252'):
+        try:
+            return file_path.read_text(encoding=encoding)
+        except UnicodeDecodeError:
+            continue
+    
+    self.logger.warning(f"Could not decode {file_path} with any known encoding")
+    return None
+```
+
+---
+
+## 2. Architectural Issues
+
+### 2.1 `context_chunks` Dictionary — Fragile Design
+
+```python
+context_chunks = {
+    'metadata': {},
+    'tree_structure': '',
+    'file_contents': {},
+    'dependencies': {},
+    'cicd_configs': {},
+    'readme': '',
+    'license': '',
+    'stats': {}
+}
+```
+
+**Issues:**
+- Plain `dict` with mixed value types (`{}` vs `''`) — no schema enforcement
+- Any method can mutate any key without validation
+- No type hints on the method signatures
+
+**Recommended fix — use a dataclass:**
+```python
+from dataclasses import dataclass, field
+from typing import Dict
+
+@dataclass
+class ProjectContext:
+    metadata: Dict[str, str] = field(default_factory=dict)
+    tree_structure: str = ''
+    file_contents: Dict[str, str] = field(default_factory=dict)
+    dependencies: Dict[str, any] = field(default_factory=dict)
+    cicd_configs: Dict[str, str] = field(default_factory=dict)
+    readme: str = ''
+    license: str = ''
+    stats: Dict[str, int] = field(default_factory=dict)
+```
+
+---
+
+### 2.2 Exception Handling — Overly Broad Catch
+
+```python
+try:
+    self.add_metadata(context_chunks, project_path)
+    # ... 5 more calls
+except Exception as e:
+    self.logger.error(f"Ошибка при построении контекста проекта: {e}")
+    raise
+```
+
+**Issues:**
+- A single `try/except` wraps 6 independent operations — failure in `add_metadata` skips all subsequent steps
+- Re-raising after logging provides no additional context to the caller
+- No partial result is returned; all work is lost on any error
+
+**Fix:**
+```python
+def build_project_context(self, project_dir: str) -> ProjectContext:
+    project_path = Path(project_dir)
+    
+    if not project_path.exists():
+        raise FileNotFoundError(f"Directory does not exist: {project_dir}")
+    
+    context = ProjectContext()
+    
+    steps = [
+        ('metadata', self.add_metadata),
+        ('tree_structure', self.add_tree_structure),
+        ('file_contents', self.add_file_contents),
+        ('dependencies', self.add_dependencies),
+        ('cicd_configs', self.add_cicd_configs),
+        ('readme_license', self.add_readme_and_license),
+        ('statistics', self.add_statistics),
+    ]
+    
+    for
+
+=== SUMMARY ===
+Processed 2 models: 2 successful, 0 errors
+
+[OK] claude-sonnet-4-6: OK (13930 chars)
+[OK] claude-opus-4-1: OK (15111 chars)
+
+
+=== RECOMMENDATIONS ===
+[i] Compare responses from different models
+
+======================================================================

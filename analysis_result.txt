@@ -1,0 +1,312 @@
+АНАЛИЗ ПРОЕКТА AGENTAI
+======================================================================
+# Анализ проекта AgentAI: Найденные ошибки и исправления
+
+## 📋 Найденные проблемы
+
+### 1. `ContextBuilder.py` — Критические ошибки
+- `add_metadata(self, context_chunks)` — **отсутствует параметр `project_path`**, хотя вызывается с двумя аргументами
+- Методы `add_metadata`, `add_tree_structure`, `add_file_contents` — **пустые заглушки** (`pass`), но вызываются в `build_project_context`
+- Методы `add_dependencies`, `add_cicd_configs`, `add_readme_and_license`, `add_statistics` — **полностью отсутствуют**, но вызываются
+
+### 2. `ModelProcessor.py` — Критические ошибки
+- `self.client` — **не существует** (есть `self.async_client` и `self.sync_client`), но используется в `_process_with_models_sequentially` и `generate_code_review`
+- `client_1` создаётся, но используется `client` (необъявленная переменная) — **NameError**
+- `print(message.content[0].text)` — переменная `message` не определена в этом scope
+- **Дублирование промптов**: одинаковые `system_prompt` и `user_query` в `process_with_models_parallel` и `_process_with_models_sequentially`
+- `asyncio.get_event_loop().time()` — **deprecated** в Python 3.10+, использовать `asyncio.get_running_loop()`
+- Конструктор принимает `config: Dict`, но в `main()` вызывается как `ModelProcessor(client, [...])`  — **несовместимые сигнатуры**
+- `"claude-3-5-sonnet"` — **неверное имя модели** в `generate_code_review`
+
+### 3. `UIInput.py` — Критические ошибки
+- `project_data` — **необъявленная переменная** (NameError)
+- `ResultFormatter.display_results()` — вызов **метода экземпляра как статического**, без аргументов
+- Параметры `system_prompt`, `user_prompt` игнорируются — **перезаписываются** внутри метода
+- Импорт `from ResultFormatter import ResultFormatter` — **относительный импорт** без указания пакета
+
+### 4. `ResultFormatter.py` — Логические ошибки
+- Все методы — **пустые заглушки** (`pass`), класс полностью нефункционален
+
+### 5. `main.py` — Проблемы
+- `PROJECT_DIR` — **захардкоженный абсолютный путь** (`C:\Users\strog\...`)
+- Дублирование логики с `ProjectAnalyzer.py` (функции `generate_tree`, `collect_context`)
+- Модель `"claude-sonnet-4-6"` — нестандартное имя
+
+### 6. `config.json` — Проблема безопасности
+- **API ключ в открытом виде** в репозитории — критическая уязвимость
+
+---
+
+## ✅ Исправленные файлы
+
+### `config.json`
+```json
+{
+    "api_key": "",
+    "base_url": "https://api.proxyapi.ru/anthropic",
+    "models": ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229"],
+    "max_tokens": 4000,
+    "temperature": 0.2
+}
+```
+
+---
+
+### `ContextBuilder.py`
+```python
+import logging
+import os
+from pathlib import Path
+
+
+class ContextBuilder:
+    """Построитель контекста проекта — сканирует файлы и собирает данные."""
+
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        self.valid_extensions = {
+            '.py', '.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.scss',
+            '.json', '.yaml', '.yml', '.md', '.txt', '.xml', '.sql',
+            '.java', '.cpp', '.c', '.h', '.hpp', '.go', '.rs', '.rb',
+            '.php', '.sh', '.bash', '.v', '.sv', '.vhd', '.vhdl', '.tcl'
+        }
+        self.ignore_dirs = {
+            '__pycache__', '.git', 'node_modules', '.svn', '.hg',
+            '.idea', '.vscode', 'venv', '.venv', 'env', '.env',
+            '.pytest_cache', 'dist', 'build', '.tox', '.mypy_cache',
+            'db', 'incremental_db', 'simulation', 'greybox_tmp', '.qodo'
+        }
+        self.max_file_size = 1024 * 1024  # 1MB
+
+    def build_project_context(self, project_dir: str) -> dict:
+        """Построение полного контекста проекта."""
+        project_path = Path(project_dir)
+
+        if not project_path.exists():
+            raise FileNotFoundError(f"Директория не существует: {project_dir}")
+
+        context_chunks = {
+            'metadata': {},
+            'tree_structure': '',
+            'file_contents': {},
+            'dependencies': {},
+            'cicd_configs': {},
+            'readme': '',
+            'license': '',
+            'stats': {}
+        }
+
+        try:
+            self._add_metadata(context_chunks, project_path)
+            self._add_tree_structure(context_chunks, project_path)
+            self._add_file_contents(context_chunks, project_path)
+            self._add_dependencies(context_chunks, project_path)
+            self._add_cicd_configs(context_chunks, project_path)
+            self._add_readme_and_license(context_chunks, project_path)
+            self._add_statistics(context_chunks, project_path)
+        except Exception as e:
+            self.logger.error(f"Ошибка при построении контекста: {e}")
+            raise
+
+        return context_chunks
+
+    # ------------------------------------------------------------------ #
+    #  Приватные методы                                                    #
+    # ------------------------------------------------------------------ #
+
+    def _add_metadata(self, context_chunks: dict, project_path: Path) -> None:
+        """Добавление метаданных проекта."""
+        context_chunks['metadata'] = {
+            'project_name': project_path.name,
+            'project_path': str(project_path.resolve()),
+        }
+
+    def _add_tree_structure(self, context_chunks: dict, project_path: Path) -> None:
+        """Добавление дерева структуры проекта."""
+        context_chunks['tree_structure'] = self._generate_tree(project_path)
+
+    def _generate_tree(self, current_dir: Path, indent: str = "") -> str:
+        """Рекурсивное построение дерева директорий."""
+        tree = ""
+        try:
+            items = sorted(current_dir.iterdir(), key=lambda p: (p.is_file(), p.name))
+        except PermissionError:
+            self.logger.warning(f"Нет доступа к директории: {current_dir}")
+            return tree
+
+        items_list = [i for i in items if i.name not in self.ignore_dirs]
+        for idx, item in enumerate(items_list):
+            is_last = (idx == len(items_list) - 1)
+            connector = '└── ' if is_last else '├── '
+            child_indent = indent + ("    " if is_last else "│   ")
+
+            if item.is_dir():
+                tree += f"{indent}{connector}[{item.name}/]\n"
+                tree += self._generate_tree(item, child_indent)
+            else:
+                tree += f"{indent}{connector}{item.name}\n"
+
+        return tree
+
+    def _add_file_contents(self, context_chunks: dict, project_path: Path) -> None:
+        """Чтение и сохранение содержимого файлов."""
+        for root, dirs, files in os.walk(project_path):
+            # Фильтрация игнорируемых директорий
+            dirs[:] = [d for d in dirs if d not in self.ignore_dirs]
+
+            for file_name in sorted(files):
+                file_path = Path(root) / file_name
+                if file_path.suffix.lower() not in self.valid_extensions:
+                    continue
+                if file_path.stat().st_size > self.max_file_size:
+                    self.logger.warning(f"Файл пропущен (>1MB): {file_path}")
+                    continue
+
+                rel_path = str(file_path.relative_to(project_path))
+                try:
+                    content = file_path.read_text(encoding='utf-8', errors='replace')
+                    context_chunks['file_contents'][rel_path] = content
+                except Exception as e:
+                    self.logger.warning(f"Ошибка чтения {file_path}: {e}")
+                    context_chunks['file_contents'][rel_path] = f"[Ошибка чтения: {e}]"
+
+    def _add_dependencies(self, context_chunks: dict, project_path: Path) -> None:
+        """Сбор зависимостей из стандартных файлов."""
+        dep_files = {
+            'requirements.txt': self._parse_requirements,
+            'package.json':     self._parse_package_json,
+        }
+        deps = {}
+        for filename, parser in dep_files.items():
+            file_path = project_path / filename
+            if file_path.exists():
+                try:
+                    deps[filename] = parser(file_path)
+                except Exception as e:
+                    self.logger.warning(f"Ошибка парсинга {filename}: {e}")
+        context_chunks['dependencies'] = deps
+
+    def _parse_requirements(self, file_path: Path) -> list:
+        lines = file_path.read_text(encoding='utf-8').splitlines()
+        return [l.strip() for l in lines if l.strip() and not l.startswith('#')]
+
+    def _parse_package_json(self, file_path: Path) -> dict:
+        import json
+        data = json.loads(file_path.read_text(encoding='utf-8'))
+        return {
+            'dependencies': list(data.get('dependencies', {}).keys()),
+            'devDependencies': list(data.get('devDependencies', {}).keys()),
+        }
+
+    def _add_cicd_configs(self, context_chunks: dict, project_path: Path) -> None:
+        """Поиск CI/CD конфигурационных файлов."""
+        cicd = {}
+        candidates = [
+            '.github/workflows', '.gitlab-ci.yml', 'Jenkinsfile',
+            '.travis.yml', 'Dockerfile', 'Makefile',
+        ]
+        for candidate in candidates:
+            target = project_path / candidate
+            if target.exists():
+                cicd[candidate] = str(target.relative_to(project_path))
+        context_chunks['cicd_configs'] = cicd
+
+    def _add_readme_and_license(self, context_chunks: dict, project_path: Path) -> None:
+        """Чтение README и LICENSE файлов."""
+        for name in ('README.md', 'README.rst', 'README.txt', 'readme.md'):
+            p = project_path / name
+            if p.exists():
+                context_chunks['readme'] = p.read_text(encoding='utf-8', errors='replace')
+                break
+
+        for name in ('LICENSE', 'LICENSE.md', 'LICENSE.txt', 'COPYING'):
+            p = project_path / name
+            if p.exists():
+                context_chunks['license'] = p.read_text(encoding='utf-8', errors='replace')
+                break
+
+    def _add_statistics(self, context_chunks: dict, project_path: Path) -> None:
+        """Сбор статистики по проекту."""
+        stats: dict = {}
+        for root, dirs, files in os.walk(project_path):
+            dirs[:] = [d for d in dirs if d not in self.ignore_dirs]
+            for f in files:
+                ext = Path(f).suffix.lower()
+                stats[ext] = stats.get(ext, 0) + 1
+        context_chunks['stats'] = stats
+
+    # ------------------------------------------------------------------ #
+    #  Публичный хелпер                                                    #
+    # ------------------------------------------------------------------ #
+
+    def build_prompt_context(self, project_dir: str) -> str:
+        """
+        Возвращает контекст проекта в виде единой строки,
+        пригодной для вставки в промпт.
+        """
+        chunks = self.build_project_context(project_dir)
+        parts = [
+            "=== АНАЛИЗ ПРОЕКТА ===\n",
+            f"Проект: {chunks['metadata'].get('project_name', '')}\n\n",
+            "=== СТРУКТУРА ПРОЕКТА ===\n",
+            chunks['tree_structure'],
+            "\n=== СОДЕРЖИМОЕ ФАЙЛОВ ===\n",
+        ]
+        for rel_path, content in chunks['file_contents'].items():
+            parts.append(f"\n--- НАЧАЛО: {rel_path} ---\n")
+            parts.append(content)
+            parts.append(f"\n--- КОНЕЦ: {rel_path} ---\n")
+
+        if chunks['readme']:
+            parts.append(f"\n=== README ===\n{chunks['readme']}\n")
+
+        return "".join(parts)
+```
+
+---
+
+### `ModelProcessor.py`
+```python
+import asyncio
+import logging
+import time
+from typing import List, Dict, Any, Optional
+
+from anthropic import AsyncAnthropic, Anthropic
+
+
+class ModelProcessor:
+    """
+    Обработка запросов через один или несколько Claude-моделей.
+    Поддерживает параллельный (async) и последовательный (sync) режимы.
+    """
+
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+        self.api_key: str = config.get("api_key", "")
+        self.base_url: Optional[str] = config.get("base_url")
+        self.model_list: List[str] = config.get("models", [])
+        self.max_tokens: int = config.get("max_tokens", 4096)
+        self.temperature: float = config.get("temperature", 0.2)
+
+        if not self.api_key:
+            raise ValueError("api_key не указан в конфигурации")
+        if not self.model_list:
+            raise ValueError("Список моделей пуст — укажите 'models' в конфиге")
+
+        # Инициализация клиентов Anthropic
+        client_kwargs = {"api_key": self.api_key}
+        if self.base_url:
+            client_kwargs["base_url"] = self.base_url
+
+        self.async_client = AsyncAnthropic(**client_kwargs)
+        self.sync_client = Anthropic(**client_kwargs)
+
+        self.logger = logging.getLogger(__name__)
+
+    # ------------------------------------------------------------------ #
+    #  Формирование промптов (единое место — без дублирования)            #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _build_prompts(project_data: str) ->
