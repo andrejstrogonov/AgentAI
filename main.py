@@ -9,6 +9,9 @@ from ContextBuilder import ContextBuilder
 from ModelProcessor import ModelProcessor
 from ResultFormatter import ResultFormatter
 from UIInput import UIInput
+from TannerAnalyzer import TannerProjectAnalyzer, analyze_tanner_project
+from EDAToolchain import OpenSourceEDAToolchain, get_tool_status
+from TannerPatcher import TannerProjectPatcher, analyze_and_patch
 
 
 logging.basicConfig(
@@ -113,21 +116,102 @@ class ProjectAnalyzer:
             "project_dir": project_dir
         }
 
+    def analyze_tanner_project(self, project_dir: str) -> Dict[str, Any]:
+        """Analyze Tanner EDA project (topology, DRC, LVS)"""
+        logger.info(f"[*] Analyzing Tanner EDA project: {project_dir}")
+        
+        # Run Tanner analysis
+        logger.info("[*] Scanning Tanner files...")
+        analyzer = TannerProjectAnalyzer()
+        tanner_analysis = analyzer.scan_project(project_dir)
+        
+        # Display results
+        self.formatter.display_results([{
+            'model': 'Tanner EDA Analyzer',
+            'status': 'success',
+            'response': analyzer.generate_report(tanner_analysis),
+            'response_length': len(analyzer.generate_report(tanner_analysis))
+        }])
+        
+        return {
+            "mode": "tanner_analysis",
+            "tanner_data": tanner_analysis,
+            "report": analyzer.generate_report(tanner_analysis),
+            "project_dir": project_dir
+        }
+
+    def patch_tanner_project(self, project_dir: str) -> Dict[str, Any]:
+        """Analyze and patch Tanner project"""
+        logger.info(f"[*] Patching Tanner project: {project_dir}")
+        
+        result = analyze_and_patch(project_dir)
+        
+        # Display report
+        self.formatter.save_to_file(result['report'], f"{project_dir}/patch_report.txt")
+        
+        return {
+            "mode": "tanner_patch",
+            "analysis": result['analysis'],
+            "patch_script": result['patch_script'],
+            "report": result['report'],
+            "project_dir": project_dir
+        }
+
+    def verify_with_opensource_tools(self, project_dir: str) -> Dict[str, Any]:
+        """Verify project using open-source EDA tools"""
+        logger.info(f"[*] Verifying with open-source tools: {project_dir}")
+        
+        # Check available tools
+        toolchain = OpenSourceEDAToolchain()
+        tool_status = toolchain.get_status()
+        
+        logger.info(f"[*] Available tools: {tool_status['installed_tools']}")
+        
+        # Run verification
+        verification_results = toolchain.full_verification_flow(project_dir)
+        
+        return {
+            "mode": "opensource_verification",
+            "tool_status": tool_status,
+            "verification": verification_results,
+            "project_dir": project_dir
+        }
+
     def save_results(self, results: Dict[str, Any], output_dir: str = ".") -> None:
         """Save analysis results to files"""
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
         
         mode = results.get('mode', 'unknown')
-        timestamp = Path.cwd().name
         
-        # Save text results
+        # Save based on analysis type
         if mode == "code_review":
             text_file = output_path / f"code_review_{mode}.txt"
             json_file = output_path / f"code_review_{mode}.json"
             content = self.formatter.format_code_review(results.get('review', {}))
             self.formatter.save_to_file(content, str(text_file))
             self.formatter.save_json(results, str(json_file))
+        
+        elif mode == "tanner_analysis":
+            text_file = output_path / f"tanner_analysis.txt"
+            json_file = output_path / f"tanner_analysis.json"
+            self.formatter.save_to_file(results.get('report', ''), str(text_file))
+            self.formatter.save_json(results.get('tanner_data', {}), str(json_file))
+        
+        elif mode == "tanner_patch":
+            text_file = output_path / f"tanner_patch_report.txt"
+            json_file = output_path / f"tanner_patch_analysis.json"
+            self.formatter.save_to_file(results.get('report', ''), str(text_file))
+            self.formatter.save_json(results.get('analysis', {}), str(json_file))
+            logger.info(f"[+] Patch script: {results.get('patch_script', '')}")
+        
+        elif mode == "opensource_verification":
+            text_file = output_path / f"verification_report.txt"
+            json_file = output_path / f"verification_results.json"
+            verification_text = json.dumps(results.get('verification', {}), indent=2)
+            self.formatter.save_to_file(verification_text, str(text_file))
+            self.formatter.save_json(results, str(json_file))
+        
         else:
             text_file = output_path / f"analysis_{mode}.txt"
             json_file = output_path / f"analysis_{mode}.json"
@@ -140,9 +224,11 @@ def main():
     """Main entry point"""
     import argparse
     
-    parser = argparse.ArgumentParser(description='Project Analyzer using Claude AI Models')
+    parser = argparse.ArgumentParser(description='Project Analyzer using Claude AI Models + Tanner EDA Tools')
     parser.add_argument('project_dir', help='Path to project directory to analyze')
-    parser.add_argument('--mode', choices=['sequential', 'parallel', 'review'], default='sequential',
+    parser.add_argument('--mode', 
+                       choices=['sequential', 'parallel', 'review', 'tanner', 'patch', 'verify'],
+                       default='sequential',
                        help='Analysis mode')
     parser.add_argument('--output', default='.', help='Output directory for results')
     parser.add_argument('--config', default='config.json', help='Path to config file')
@@ -163,6 +249,23 @@ def main():
         elif args.mode == 'review':
             logger.info("[*] Running in CODE REVIEW mode")
             results = analyzer.code_review(args.project_dir)
+        elif args.mode == 'tanner':
+            logger.info("[*] Running in TANNER ANALYSIS mode")
+            results = analyzer.analyze_tanner_project(args.project_dir)
+        elif args.mode == 'patch':
+            logger.info("[*] Running in TANNER PATCH mode")
+            results = analyzer.patch_tanner_project(args.project_dir)
+        elif args.mode == 'verify':
+            logger.info("[*] Running in OPEN-SOURCE VERIFICATION mode")
+            results = analyzer.verify_with_opensource_tools(args.project_dir)
+        
+        # Save results
+        analyzer.save_results(results, args.output)
+        logger.info("[OK] Analysis complete!")
+        
+    except Exception as e:
+        logger.error(f"[ERROR] Analysis failed: {e}")
+        raise
         
         # Save results
         analyzer.save_results(results, args.output)
