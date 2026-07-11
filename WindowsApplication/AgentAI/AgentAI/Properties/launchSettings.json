@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "AgentAI (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "AgentAI (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
