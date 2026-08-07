@@ -48,7 +48,7 @@ class ModelProcessor:
             "user": user_prompt
         }
 
-    async def process_with_models_parallel(self, project_data: str) -> List[Dict[str, Any]]:
+    async def process_with_models_parallel(self, project_data: str) -> Dict[str, Any]:
         """Обработка через несколько моделей параллельно (async)"""
         if not self.model_list:
             raise ValueError("No models specified")
@@ -76,7 +76,15 @@ class ModelProcessor:
                 else:
                     processed_results.append(result)
 
-            return processed_results
+            mutation_testing = self.run_mutation_testing(project_data, processed_results)
+            genetic_improvement = self.run_genetic_algorithm(project_data, processed_results)
+
+            return {
+                "results": processed_results,
+                "model_results": processed_results,
+                "mutation_testing": mutation_testing,
+                "genetic_improvement": genetic_improvement
+            }
 
         except Exception as e:
             self.logger.error(f"Error in parallel processing: {str(e)}")
@@ -116,7 +124,7 @@ class ModelProcessor:
                 "error_type": type(e).__name__
             }
 
-    def process_with_models_sequential(self, project_data: str) -> List[Dict[str, Any]]:
+    def process_with_models_sequential(self, project_data: str) -> Dict[str, Any]:
         """Обработка через несколько моделей последовательно (sync)"""
         results = []
         prompts = self._build_unified_prompt(project_data)
@@ -154,9 +162,23 @@ class ModelProcessor:
                 }
                 results.append(result)
 
-        return results
+        mutation_testing = self.run_mutation_testing(project_data, results)
+        genetic_improvement = self.run_genetic_algorithm(project_data, results)
 
-    def generate_code_review(self, project_data: str, results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        return {
+            "results": results,
+            "model_results": results,
+            "mutation_testing": mutation_testing,
+            "genetic_improvement": genetic_improvement
+        }
+
+    def generate_code_review(
+        self,
+        project_data: str,
+        results: List[Dict[str, Any]],
+        mutation_testing: Dict[str, Any] = None,
+        genetic_improvement: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
         """Генерация code review на основе результатов всех моделей"""
         review_prompt = (
             "You are an expert code reviewer. Analyze the project and the following model outputs "
@@ -173,6 +195,18 @@ class ModelProcessor:
                 review_prompt += f"Analysis: {result['response'][:500]}\n"
             elif result['status'] == 'error':
                 review_prompt += f"Error: {result['error']}\n"
+
+        if mutation_testing:
+            review_prompt += "\nMUTATION TESTING SUMMARY:\n"
+            review_prompt += mutation_testing.get("mutation_summary", "No mutation summary available")
+            review_prompt += "\nMUTATION TESTING DETAILS:\n"
+            review_prompt += mutation_testing.get("mutation_findings", "No mutation findings available")
+
+        if genetic_improvement:
+            review_prompt += "\nGENETIC IMPROVEMENT SUMMARY:\n"
+            review_prompt += genetic_improvement.get("generation_summary", "No genetic improvement summary available")
+            review_prompt += "\nGENETIC IMPROVEMENT RESULT:\n"
+            review_prompt += genetic_improvement.get("best_solution", "No genetic improvement result available")
 
         try:
             # Используем первую модель для code review
@@ -195,6 +229,8 @@ class ModelProcessor:
                 "review": review_message.content[0].text if review_message.content else "",
                 "summary": self._generate_summary(results),
                 "recommendations": self._generate_recommendations(results),
+                "mutation_testing": mutation_testing,
+                "genetic_improvement": genetic_improvement,
                 "status": "success"
             }
 
@@ -203,6 +239,97 @@ class ModelProcessor:
                 "review": f"Error generating code review: {str(e)}",
                 "summary": "Review generation failed",
                 "recommendations": "Unable to generate recommendations",
+                "status": "error",
+                "error": str(e)
+            }
+
+    def run_mutation_testing(self, project_data: str, results: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Симулируем мутационное тестирование на уровне кода через LLM"""
+        prompt = (
+            "You are an expert in software quality and mutation testing. "
+            "Analyze the project and suggest a small set of targeted code mutations that would "
+            "reveal fragile logic, hidden bugs, or missing error handling. For each mutation, explain "
+            "why it is useful and how it would impact the code. Then provide a brief recommendation "
+            "for hardening the code against these issues.\n\n"
+            "PROJECT CODE:\n"
+            f"{project_data[:3000]}\n\n"
+        )
+
+        if results:
+            prompt += "MODEL ANALYSIS RESULTS:\n"
+            for result in results:
+                prompt += f"- {result['model']} ({result['status']}): {result.get('response', '')[:200]}\n"
+
+        try:
+            mutation_message = self.sync_client.messages.create(
+                model=self.model_list[0] if self.model_list else "claude-3-sonnet",
+                max_tokens=1600,
+                temperature=0.25,
+                system="You are a mutation testing expert. Provide concise, actionable analysis.",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ]
+            )
+
+            mutation_response = mutation_message.content[0].text if mutation_message.content else ""
+            return {
+                "mutation_summary": "Mutation testing analysis completed.",
+                "mutation_findings": mutation_response,
+                "status": "success"
+            }
+        except Exception as e:
+            return {
+                "mutation_summary": "Mutation testing failed.",
+                "mutation_findings": str(e),
+                "status": "error",
+                "error": str(e)
+            }
+
+    def run_genetic_algorithm(self, project_data: str, results: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Симулируем стандартный генетический алгоритм для улучшения кода через LLM"""
+        prompt = (
+            "You are an expert in genetic algorithms and software optimization. "
+            "Using the project code as input, simulate a standard genetic algorithm workflow: "
+            "generate an initial population of improved code variants, evaluate their fitness based on "
+            "readability, maintainability, performance, and correctness, then apply selection, crossover, "
+            "and mutation to produce a better final code suggestion. Present the best candidate and "
+            "explain why it is superior.\n\n"
+            "PROJECT CODE:\n"
+            f"{project_data[:3000]}\n\n"
+        )
+
+        if results:
+            prompt += "MODEL ANALYSIS RESULTS:\n"
+            for result in results:
+                prompt += f"- {result['model']} ({result['status']}): {result.get('response', '')[:200]}\n"
+
+        try:
+            genetic_message = self.sync_client.messages.create(
+                model=self.model_list[0] if self.model_list else "claude-3-sonnet",
+                max_tokens=1800,
+                temperature=0.25,
+                system="You are a genetic algorithm expert for code improvement.",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ]
+            )
+
+            genetic_response = genetic_message.content[0].text if genetic_message.content else ""
+            return {
+                "generation_summary": "Genetic improvement simulation completed.",
+                "best_solution": genetic_response,
+                "status": "success"
+            }
+        except Exception as e:
+            return {
+                "generation_summary": "Genetic improvement failed.",
+                "best_solution": str(e),
                 "status": "error",
                 "error": str(e)
             }

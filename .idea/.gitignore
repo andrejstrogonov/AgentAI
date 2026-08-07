@@ -1,0 +1,9 @@
+# Default ignored files
+/shelf/
+/workspace.xml
+# Editor-based HTTP Client requests
+/httpRequests/
+# CodeStream ignored files
+/../../AgentAI\.idea/codestream.xml
+# Django PowerTools cache (generated)
+/djangoPowerTools/
