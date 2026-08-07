@@ -1,0 +1,11 @@
+/shelf/
+/workspace.xml
+__pycache__/
+/.idea
+/WindowsApplication/AgentAI/.vs
+# Editor-based HTTP Client requests
+/httpRequests/
+# CodeStream ignored files
+/../../AgentAI\.idea/codestream.xml
+# Django PowerTools cache (generated)
+/djangoPowerTools/
