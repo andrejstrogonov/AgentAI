@@ -4,6 +4,7 @@ import time
 from typing import List, Dict, Any
 
 from anthropic import AsyncAnthropic, Anthropic
+from QualityEngine import QualityEngine
 
 
 class ModelProcessor:
@@ -27,6 +28,7 @@ class ModelProcessor:
         self.async_client = AsyncAnthropic(**client_kwargs)
         self.sync_client = Anthropic(**client_kwargs)
         self.logger = logging.getLogger(__name__)
+        self.quality_engine = QualityEngine()
 
     @staticmethod
     def _build_unified_prompt(project_data: str) -> Dict[str, str]:
@@ -180,6 +182,8 @@ class ModelProcessor:
         genetic_improvement: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """Генерация code review на основе результатов всех моделей"""
+        mutation_testing = mutation_testing or self.run_mutation_testing(project_data, results)
+        genetic_improvement = genetic_improvement or self.run_genetic_algorithm(project_data, results)
         review_prompt = (
             "You are an expert code reviewer. Analyze the project and the following model outputs "
             "to provide a comprehensive code review.\n\n"
@@ -228,7 +232,7 @@ class ModelProcessor:
             return {
                 "review": review_message.content[0].text if review_message.content else "",
                 "summary": self._generate_summary(results),
-                "recommendations": self._generate_recommendations(results),
+                "recommendations": self._generate_recommendations(results, genetic_improvement),
                 "mutation_testing": mutation_testing,
                 "genetic_improvement": genetic_improvement,
                 "status": "success"
@@ -238,12 +242,16 @@ class ModelProcessor:
             return {
                 "review": f"Error generating code review: {str(e)}",
                 "summary": "Review generation failed",
-                "recommendations": "Unable to generate recommendations",
+                "recommendations": self._generate_recommendations(results, genetic_improvement),
+                "mutation_testing": mutation_testing,
+                "genetic_improvement": genetic_improvement,
                 "status": "error",
                 "error": str(e)
             }
 
     def run_mutation_testing(self, project_data: str, results: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Run deterministic local mutation analysis."""
+        return self.quality_engine.mutation_testing(project_data)
         """Симулируем мутационное тестирование на уровне кода через LLM"""
         prompt = (
             "You are an expert in software quality and mutation testing. "
@@ -289,6 +297,8 @@ class ModelProcessor:
             }
 
     def run_genetic_algorithm(self, project_data: str, results: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Evolve local, actionable recommendations from project signals."""
+        return self.quality_engine.genetic_improvement(project_data, results)
         """Симулируем стандартный генетический алгоритм для улучшения кода через LLM"""
         prompt = (
             "You are an expert in genetic algorithms and software optimization. "
@@ -351,7 +361,9 @@ class ModelProcessor:
 
         return summary
 
-    def _generate_recommendations(self, results: List[Dict[str, Any]]) -> str:
+    def _generate_recommendations(
+        self, results: List[Dict[str, Any]], genetic_improvement: Dict[str, Any] = None
+    ) -> str:
         """Генерация рекомендаций на основе результатов"""
         recommendations = []
 
@@ -362,6 +374,10 @@ class ModelProcessor:
         success_results = [r for r in results if r['status'] == 'success']
         if len(success_results) > 1:
             recommendations.append("[i] Compare responses from different models")
+
+        if genetic_improvement:
+            for recommendation in genetic_improvement.get("recommendations", [])[:3]:
+                recommendations.append(f"[GA] {recommendation}")
 
         if not recommendations:
             recommendations.append("[OK] All results are positive")
