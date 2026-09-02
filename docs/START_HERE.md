@@ -25,13 +25,13 @@ $env:ANTHROPIC_API_KEY='sk-LgqiRR4lfipwfWA6vrs4xJvZOiEzYpsW'
 
 ```bash
 # Режим 1: Последовательно (по одной модели)
-python main.py . --mode sequential
+cd python; python main.py .. --mode sequential
 
 # Режим 2: Параллельно (все модели одновременно) ⭐ БЫСТРО
-python main.py . --mode parallel
+cd python; python main.py .. --mode parallel
 
 # Режим 3: Полный Code Review (анализ + review)
-python main.py . --mode review
+cd python; python main.py .. --mode review
 ```
 
 ---
@@ -96,22 +96,22 @@ code_review_code_review.json  ← Структурированный JSON
 ### Пример 1: Анализ текущей папки параллельно
 ```bash
 $env:ANTHROPIC_API_KEY='sk-...'
-python main.py . --mode parallel
+cd python; python main.py . --mode parallel
 ```
 
 ### Пример 2: Анализ другого проекта
 ```bash
-python main.py C:\Users\user\project --mode parallel --output ./results
+cd python; python main.py C:\Users\user\project --mode parallel --output ./results
 ```
 
 ### Пример 3: Полный code review с сохранением
 ```bash
-python main.py ./myproject --mode review --output ./reviews
+cd python; python main.py ./myproject --mode review --output ./reviews
 ```
 
 ### Пример 4: Последовательный анализ (консервативный)
 ```bash
-python main.py . --mode sequential
+cd python; python main.py . --mode sequential
 ```
 
 ---
@@ -241,7 +241,7 @@ pip install anthropic
 
 # 2. Запустить параллельный анализ (БЫСТРО!)
 $env:ANTHROPIC_API_KEY='sk-...'
-python main.py . --mode parallel
+cd python; python main.py . --mode parallel
 ```
 
 ### Вариант 2: Полный анализ с Code Review
@@ -251,13 +251,13 @@ pip install anthropic
 
 # 2. Запустить code review
 $env:ANTHROPIC_API_KEY='sk-...'
-python main.py . --mode review
+cd python; python main.py . --mode review
 ```
 
 ### Вариант 3: Анализ другого проекта
 ```bash
 # Анализировать C:\path\to\project
-python main.py C:\path\to\project --mode parallel
+cd python; python main.py C:\path\to\project --mode parallel
 ```
 
 ---
@@ -274,10 +274,10 @@ A: В файлах `analysis_*.txt` и `*.json` в текущей папке
 A: Убедитесь, что установлена переменная окружения `ANTHROPIC_API_KEY`
 
 **Q: Как анализировать другой проект?**  
-A: `python main.py /path/to/project --mode parallel`
+A: `cd python; python main.py /path/to/project --mode parallel`
 
 **Q: Как сохранить в другую папку?**  
-A: `python main.py . --mode parallel --output ./results`
+A: `cd python; python main.py . --mode parallel --output ./results`
 
 ---
 
@@ -288,7 +288,7 @@ A: `python main.py . --mode parallel --output ./results`
 **Начните с:**
 ```bash
 $env:ANTHROPIC_API_KEY='your_key'
-python main.py . --mode parallel
+cd python; python main.py . --mode parallel
 ```
 
 **Результаты будут в:**

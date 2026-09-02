@@ -78,7 +78,7 @@
 
 ### 1. SEQUENTIAL MODE (Последовательно)
 ```bash
-python main.py . --mode sequential
+cd python; python main.py . --mode sequential
 ```
 - Обрабатывает проект через модели последовательно
 - Результат: `analysis_sequential.txt` и `analysis_sequential.json`
@@ -86,7 +86,7 @@ python main.py . --mode sequential
 
 ### 2. PARALLEL MODE (Параллельно)
 ```bash
-python main.py . --mode parallel
+cd python; python main.py . --mode parallel
 ```
 - Обрабатывает проект через модели одновременно (async)
 - Результат: `analysis_parallel.txt` и `analysis_parallel.json`
@@ -95,7 +95,7 @@ python main.py . --mode parallel
 
 ### 3. CODE REVIEW MODE (Code Review)
 ```bash
-python main.py . --mode review
+cd python; python main.py . --mode review
 ```
 - Запускает анализ + генерирует comprehensive code review
 - Результат: `code_review_code_review.txt` и `code_review_code_review.json`
@@ -186,22 +186,22 @@ def process_sequential(self, project_data: str):
 ### Команда 1: Анализ проекта последовательно
 ```bash
 $env:ANTHROPIC_API_KEY='your_key_here'
-python main.py . --mode sequential
+cd python; python main.py . --mode sequential
 ```
 
 ### Команда 2: Анализ проекта параллельно (быстрее)
 ```bash
-python main.py . --mode parallel
+cd python; python main.py . --mode parallel
 ```
 
 ### Команда 3: Полный code review
 ```bash
-python main.py . --mode review
+cd python; python main.py . --mode review
 ```
 
 ### Команда 4: Анализ другого проекта
 ```bash
-python main.py C:\path\to\project --mode sequential --output ./results
+cd python; python main.py C:\path\to\project --mode sequential --output ./results
 ```
 
 ---

@@ -10,7 +10,7 @@ A Python-based project analysis tool that leverages Claude AI models for code an
 - **Code Review Generation**: Generate comprehensive code reviews based on analysis results
 - **Mutation Testing**: Generate syntax-checked comparison, boolean, and arithmetic mutants locally
 - **Genetic Recommendations**: Evolve deterministic, actionable recommendations from code and model signals
-- **PyQt Demo**: Run local quality analysis from a small desktop UI (`python pyqt_demo.py`)
+- **PyQt Demo**: Run local quality analysis from a small desktop UI (`cd python; python pyqt_demo.py`)
 - **Results Formatting**: Beautiful console output and file-based result storage
 - **JSON Export**: Export results in JSON format for programmatic processing
 
@@ -89,27 +89,27 @@ Customize models and parameters in `config.json`:
 
 #### Sequential Analysis
 ```bash
-python main.py /path/to/project --mode sequential
+cd python; python main.py /path/to/project --mode sequential
 ```
 
 #### Parallel Analysis (faster)
 ```bash
-python main.py /path/to/project --mode parallel
+cd python; python main.py /path/to/project --mode parallel
 ```
 
 #### Code Review
 ```bash
-python main.py /path/to/project --mode review
+cd python; python main.py /path/to/project --mode review
 ```
 
 #### Custom Output Directory
 ```bash
-python main.py /path/to/project --mode sequential --output ./results
+cd python; python main.py /path/to/project --mode sequential --output ./results
 ```
 
 #### Custom Config File
 ```bash
-python main.py /path/to/project --config custom_config.json
+cd python; python main.py /path/to/project --config custom_config.json
 ```
 
 ### Python API
@@ -143,7 +143,7 @@ command is supplied; they do not claim that a test suite killed a mutant.
 
 ```bash
 pip install -r requirements.txt
-python pyqt_demo.py
+cd python; python pyqt_demo.py
 ```
 
 The demo runs the local mutation and genetic analysis without an API key. It

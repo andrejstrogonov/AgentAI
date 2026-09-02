@@ -2,14 +2,19 @@
 
 === СТРУКТУРА ПРОЕКТА ===
 [AgentAI/]
-├── ContextBuilder.py
-├── ModelProcessor.py
-├── ProjectAnalyzer.py
-├── ResultFormatter.py
-├── UIInput.py
+├── python/
+│   ├── ContextBuilder.py
+│   ├── ModelProcessor.py
+│   ├── ProjectAnalyzer.py
+│   ├── QualityEngine.py
+│   ├── ResultFormatter.py
+│   ├── UIInput.py
+│   ├── main.py
+│   ├── new_main.py
+│   ├── pyqt_demo.py
+│   └── tests/
+├── docs/
 ├── config.json
-├── main.py
-├── new_main.py
 
 ========================================
 

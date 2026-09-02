@@ -17,30 +17,30 @@ echo "ANTHROPIC_API_KEY=your_key_here" > .env
 
 ### 1️⃣ Sequential Analysis (One model at a time)
 ```bash
-python main.py . --mode sequential
+cd python; python main.py .. --mode sequential
 ```
 **Output:** `analysis_sequential.txt` and `analysis_sequential.json`
 
 ### 2️⃣ Parallel Analysis (All models simultaneously) - FASTER!
 ```bash
-python main.py . --mode parallel
+cd python; python main.py .. --mode parallel
 ```
 **Output:** `analysis_parallel.txt` and `analysis_parallel.json`
 
 ### 3️⃣ Code Review (Full analysis + comprehensive review)
 ```bash
-python main.py . --mode review
+cd python; python main.py .. --mode review
 ```
 **Output:** `code_review_code_review.txt` and `code_review_code_review.json`
 
 ### 4️⃣ Analyze External Project
 ```bash
-python main.py C:\path\to\project --mode sequential
+cd python; python main.py C:\path\to\project --mode sequential
 ```
 
 ### 5️⃣ Custom Output Directory
 ```bash
-python main.py . --mode parallel --output ./results
+cd python; python main.py .. --mode parallel --output ./results
 ```
 
 ## Architecture
@@ -151,7 +151,7 @@ ANTHROPIC_API_URL=https://api.proxyapi.ru/anthropic
 ## Command Line Help
 
 ```bash
-python main.py --help
+cd python; python main.py --help
 ```
 
 Options:
