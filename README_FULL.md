@@ -8,6 +8,9 @@ A Python-based project analysis tool that leverages Claude AI models for code an
 - **Sequential Model Processing**: Process project through multiple AI models sequentially
 - **Parallel Model Processing**: Process project through multiple AI models in parallel (async)
 - **Code Review Generation**: Generate comprehensive code reviews based on analysis results
+- **Mutation Testing**: Generate syntax-checked comparison, boolean, and arithmetic mutants locally
+- **Genetic Recommendations**: Evolve deterministic, actionable recommendations from code and model signals
+- **PyQt Demo**: Run local quality analysis from a small desktop UI (`python pyqt_demo.py`)
 - **Results Formatting**: Beautiful console output and file-based result storage
 - **JSON Export**: Export results in JSON format for programmatic processing
 
@@ -53,6 +56,7 @@ cd AgentAI
 ### 2. Install dependencies
 ```bash
 pip install anthropic
+pip install -r requirements.txt
 ```
 
 ### 3. Configure API key
@@ -129,6 +133,21 @@ review = analyzer.code_review('/path/to/project')
 # Save results
 analyzer.save_results(results, './output')
 ```
+
+The sequential and parallel pipelines both return `mutation_testing` and
+`genetic_improvement` sections. Code review and formatted recommendations reuse
+those sections. Mutation results are static and marked `untested` until a test
+command is supplied; they do not claim that a test suite killed a mutant.
+
+### PyQt demonstration
+
+```bash
+pip install -r requirements.txt
+python pyqt_demo.py
+```
+
+The demo runs the local mutation and genetic analysis without an API key. It
+accepts pasted Python code or a selected `.py` file.
 
 ## Project Structure
 

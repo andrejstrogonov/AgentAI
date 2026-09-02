@@ -99,10 +99,18 @@ class ProjectAnalyzer:
             analysis_results = self.model_processor.process_with_models_sequential(project_context)
         else:
             project_context = self.context_builder.build_prompt_context(project_dir)
+
+        quality_data = analysis_results if isinstance(analysis_results, dict) else {}
+        model_results = quality_data.get("model_results", quality_data.get("results", analysis_results))
         
         # Generate code review
         logger.info("[*] Generating code review...")
-        review = self.model_processor.generate_code_review(project_context, analysis_results)
+        review = self.model_processor.generate_code_review(
+            project_context,
+            model_results,
+            quality_data.get("mutation_testing"),
+            quality_data.get("genetic_improvement"),
+        )
         
         # Display review
         self.formatter.display_code_review(review)

@@ -89,6 +89,16 @@ class ResultFormatter:
             output.append("\n=== RECOMMENDATIONS ===")
             output.append(review_data.get('recommendations', 'No recommendations available'))
 
+            mutation = review_data.get('mutation_testing') or {}
+            output.append("\n=== MUTATION TESTING ===")
+            output.append(mutation.get('mutation_summary', 'No mutation testing data available'))
+            output.append(mutation.get('mutation_findings', ''))
+
+            genetic = review_data.get('genetic_improvement') or {}
+            output.append("\n=== GENETIC IMPROVEMENT ===")
+            output.append(genetic.get('generation_summary', 'No genetic improvement data available'))
+            output.append(genetic.get('best_solution', ''))
+
         output.append("")
         output.append(self.separator)
         return "\n".join(output)
