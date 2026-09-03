@@ -55,12 +55,13 @@ class ProjectAnalyzer:
         logger.info("[*] Processing with models sequentially...")
         results = self.model_processor.process_with_models_sequential(project_context)
         
-        # Display results
-        self.formatter.display_results(results)
+        # Display results (support both dict and list return types)
+        display_items = results.get('results', results) if isinstance(results, dict) else results
+        self.formatter.display_results(display_items)
         
         return {
             "mode": "sequential",
-            "results": results,
+            "results": results.get('results', results) if isinstance(results, dict) else results,
             "project_dir": project_dir
         }
 
@@ -76,12 +77,13 @@ class ProjectAnalyzer:
         logger.info("[*] Processing with models in parallel...")
         results = await self.model_processor.process_with_models_parallel(project_context)
         
-        # Display results
-        self.formatter.display_results(results)
+        # Display results (support both dict and list return types)
+        display_items = results.get('results', results) if isinstance(results, dict) else results
+        self.formatter.display_results(display_items)
         
         return {
             "mode": "parallel",
-            "results": results,
+            "results": results.get('results', results) if isinstance(results, dict) else results,
             "project_dir": project_dir
         }
 
