@@ -1,23 +1,44 @@
 import asyncio
 import logging
-import time
 from typing import List, Dict, Any
+from pathlib import Path
+import os
 
 from anthropic import AsyncAnthropic, Anthropic
+
 from QualityEngine import QualityEngine
 
 
 class ModelProcessor:
     def __init__(self, config: Dict[str, Any]):
-        self.config = config
-        self.api_key = config.get("api_key")
-        self.base_url = config.get("base_url")
-        self.model_list = config.get("models", [])
-        self.max_tokens = config.get("max_tokens", 4096)
-        self.temperature = config.get("temperature", 0.2)
+        self.config = config or {}
+
+        # If api_key not provided in config, attempt to load from .env files
+        if not self.config.get('api_key'):
+            for base in (Path.cwd(), Path(__file__).resolve().parent):
+                dotenv = base / '.env'
+                if dotenv.exists():
+                    try:
+                        with open(dotenv, 'r', encoding='utf-8') as f:
+                            for line in f:
+                                line = line.strip()
+                                if not line or line.startswith('#') or '=' not in line:
+                                    continue
+                                k, v = line.split('=', 1)
+                                k = k.strip(); v = v.strip().strip('"').strip("'")
+                                if k and v and k not in os.environ:
+                                    os.environ[k] = v
+                    except Exception as e:
+                        logging.getLogger(__name__).warning(f"Failed to read .env {dotenv}: {e}")
+
+        self.api_key = self.config.get("api_key") or os.getenv("ANTHROPIC_API_KEY")
+        self.base_url = self.config.get("base_url")
+        self.model_list = self.config.get("models", [])
+        self.max_tokens = self.config.get("max_tokens", 4096)
+        self.temperature = self.config.get("temperature", 0.2)
 
         if not self.api_key:
-            raise ValueError("API key not provided in config")
+            raise ValueError("API key not provided in config or environment (.env)")
         if not self.model_list:
             raise ValueError("Model list is empty")
 
@@ -29,6 +50,41 @@ class ModelProcessor:
         self.sync_client = Anthropic(**client_kwargs)
         self.logger = logging.getLogger(__name__)
         self.quality_engine = QualityEngine()
+
+    @staticmethod
+    def _build_unified_prompt(project_data: str) -> Dict[str, str]:
+        pass
+
+    def _extract_message_text(self, message) -> str:
+        """Normalize various SDK response formats into plain text."""
+        if not message:
+            return ""
+        try:
+            # Common pattern: message.content -> list
+            content = getattr(message, 'content', None)
+            if content:
+                first = content[0]
+                if isinstance(first, dict):
+                    # Some SDKs return {'text': '...'}
+                    return first.get('text') or first.get('content') or first.get('message') or str(first)
+                else:
+                    if hasattr(first, 'text'):
+                        return getattr(first, 'text') or ''
+                    if hasattr(first, 'content'):
+                        return getattr(first, 'content') or ''
+            # Some SDKs return message.text directly
+            if hasattr(message, 'text'):
+                return getattr(message, 'text') or ''
+            # dict-like message
+            if isinstance(message, dict):
+                return message.get('text') or message.get('output') or message.get('response') or str(message)
+            # fallback to str
+            return str(message)
+        except Exception:
+            try:
+                return str(message)
+            except Exception:
+                return ""
 
     @staticmethod
     def _build_unified_prompt(project_data: str) -> Dict[str, str]:
@@ -93,22 +149,48 @@ class ModelProcessor:
             raise
 
     async def _process_single_model_async(self, model_name: str, prompts: Dict[str, str]) -> Dict[str, Any]:
-        """Обработка одной модели в async режиме"""
+        """Обработка одной модели в async режиме with robust SDK compatibility and response normalization"""
         try:
-            message = await self.async_client.messages.create(
-                model=model_name,
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
-                system=prompts["system"],
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompts["user"]
-                    }
-                ]
-            )
+            user_message = {"role": "user", "content": prompts.get("user", "")}
+            system_text = prompts.get("system")
 
-            response_text = message.content[0].text if message.content else ""
+            # Try call signatures in preferred order for compatibility with proxy and SDKs
+            # 1) top-level system param (proxy expects this)
+            try:
+                message = await self.async_client.messages.create(
+                    model=model_name,
+                    max_tokens=self.max_tokens,
+                    temperature=self.temperature,
+                    system=system_text,
+                    messages=[user_message],
+                )
+            except TypeError:
+                # 2) system as a message (some SDKs accept this)
+                try:
+                    message = await self.async_client.messages.create(
+                        model=model_name,
+                        max_tokens=self.max_tokens,
+                        temperature=self.temperature,
+                        messages=([{"role": "system", "content": system_text}] if system_text else []) + [user_message],
+                    )
+                except TypeError:
+                    # 3) without temperature/system fields
+                    try:
+                        message = await self.async_client.messages.create(
+                            model=model_name,
+                            max_tokens=self.max_tokens,
+                            messages=([{"role": "system", "content": system_text}] if system_text else []) + [user_message],
+                        )
+                    except TypeError:
+                        # Last resort: try completions endpoint if available
+                        if hasattr(self.async_client, 'completions') and hasattr(self.async_client.completions, 'create'):
+                            full_prompt = (system_text or '') + '\n' + (prompts.get('user',''))
+                            full_prompt = full_prompt.strip()
+                            message = await self.async_client.completions.create(model=model_name, prompt=full_prompt, max_tokens=self.max_tokens)
+                        else:
+                            raise
+
+            response_text = self._extract_message_text(message)
 
             return {
                 "model": model_name,
@@ -127,30 +209,58 @@ class ModelProcessor:
             }
 
     def process_with_models_sequential(self, project_data: str) -> Dict[str, Any]:
-        """Обработка через несколько моделей последовательно (sync)"""
+        """Обработка через несколько моделей последовательно (sync) with SDK compatibility"""
         results = []
         prompts = self._build_unified_prompt(project_data)
 
         for model_name in self.model_list:
             try:
-                message = self.sync_client.messages.create(
-                    model=model_name,
-                    max_tokens=self.max_tokens,
-                    temperature=self.temperature,
-                    system=prompts["system"],
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": prompts["user"]
-                        }
-                    ]
-                )
+                messages = []
+                if prompts.get("system"):
+                    messages.append({"role": "system", "content": prompts["system"]})
+                messages.append({"role": "user", "content": prompts["user"]})
+
+                user_message = {"role": "user", "content": prompts.get("user", "")}
+                system_text = prompts.get("system")
+
+                try:
+                    message = self.sync_client.messages.create(
+                        model=model_name,
+                        max_tokens=self.max_tokens,
+                        temperature=self.temperature,
+                        system=system_text,
+                        messages=[user_message],
+                    )
+                except TypeError:
+                    try:
+                        message = self.sync_client.messages.create(
+                            model=model_name,
+                            max_tokens=self.max_tokens,
+                            temperature=self.temperature,
+                            messages=([{"role": "system", "content": system_text}] if system_text else []) + [user_message],
+                        )
+                    except TypeError:
+                        try:
+                            message = self.sync_client.messages.create(
+                                model=model_name,
+                                max_tokens=self.max_tokens,
+                                messages=([{"role": "system", "content": system_text}] if system_text else []) + [user_message],
+                            )
+                        except TypeError:
+                            if hasattr(self.sync_client, 'completions') and hasattr(self.sync_client.completions, 'create'):
+                                full_prompt = (system_text or '') + '\n' + (prompts.get('user',''))
+                                full_prompt = full_prompt.strip()
+                                message = self.sync_client.completions.create(model=model_name, prompt=full_prompt, max_tokens=self.max_tokens)
+                            else:
+                                raise
+
+                response_text = self._extract_message_text(message)
 
                 result = {
                     "model": model_name,
-                    "response": message.content[0].text if message.content else "",
+                    "response": response_text,
                     "status": "success",
-                    "response_length": len(message.content[0].text) if message.content else 0
+                    "response_length": len(response_text)
                 }
                 results.append(result)
 
@@ -216,21 +326,33 @@ class ModelProcessor:
             # Используем первую модель для code review
             review_model = self.model_list[0] if self.model_list else "claude-3-sonnet"
             
-            review_message = self.sync_client.messages.create(
-                model=review_model,
-                max_tokens=2048,
-                temperature=0.3,
-                system="You are a senior code reviewer. Provide detailed, actionable feedback.",
-                messages=[
-                    {
-                        "role": "user",
-                        "content": review_prompt
-                    }
-                ]
-            )
+            user_message = {"role": "user", "content": review_prompt}
+            system_text = "You are a senior code reviewer. Provide detailed, actionable feedback."
+
+            try:
+                try:
+                    review_message = self.sync_client.messages.create(
+                        model=review_model,
+                        max_tokens=2048,
+                        temperature=0.3,
+                        system=system_text,
+                        messages=[user_message],
+                    )
+                except TypeError:
+                    review_message = self.sync_client.messages.create(
+                        model=review_model,
+                        max_tokens=2048,
+                        temperature=0.3,
+                        messages=[{"role": "system", "content": system_text}, user_message],
+                    )
+            except TypeError:
+                if hasattr(self.sync_client, 'completions') and hasattr(self.sync_client.completions, 'create'):
+                    review_message = self.sync_client.completions.create(model=review_model, prompt=review_prompt, max_tokens=2048)
+                else:
+                    raise
 
             return {
-                "review": review_message.content[0].text if review_message.content else "",
+                "review": self._extract_message_text(review_message),
                 "summary": self._generate_summary(results),
                 "recommendations": self._generate_recommendations(results, genetic_improvement),
                 "mutation_testing": mutation_testing,
@@ -251,8 +373,8 @@ class ModelProcessor:
 
     def run_mutation_testing(self, project_data: str, results: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Run deterministic local mutation analysis."""
+        # Use local QualityEngine deterministic mutation testing
         return self.quality_engine.mutation_testing(project_data)
-        """Симулируем мутационное тестирование на уровне кода через LLM"""
         prompt = (
             "You are an expert in software quality and mutation testing. "
             "Analyze the project and suggest a small set of targeted code mutations that would "
@@ -298,8 +420,8 @@ class ModelProcessor:
 
     def run_genetic_algorithm(self, project_data: str, results: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Evolve local, actionable recommendations from project signals."""
+        # Use local QualityEngine genetic improvements
         return self.quality_engine.genetic_improvement(project_data, results)
-        """Симулируем стандартный генетический алгоритм для улучшения кода через LLM"""
         prompt = (
             "You are an expert in genetic algorithms and software optimization. "
             "Using the project code as input, simulate a standard genetic algorithm workflow: "
