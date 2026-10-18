@@ -1,0 +1,20 @@
+{
+  "mode": "sequential",
+  "results": [
+    {
+      "model": "claude-sonnet-4-6",
+      "response": null,
+      "status": "error",
+      "error": "Messages.create() got an unexpected keyword argument 'temperature'",
+      "error_type": "TypeError"
+    },
+    {
+      "model": "claude-opus-4-1",
+      "response": null,
+      "status": "error",
+      "error": "Messages.create() got an unexpected keyword argument 'temperature'",
+      "error_type": "TypeError"
+    }
+  ],
+  "project_dir": "."
+}

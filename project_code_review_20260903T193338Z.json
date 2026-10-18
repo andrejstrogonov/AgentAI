@@ -1,0 +1,12 @@
+{
+  "mode": "code_review",
+  "review": {
+    "review": "Mock code review: no obvious issues found.",
+    "summary": "Mock summary",
+    "recommendations": "No action required",
+    "mutation_testing": {},
+    "genetic_improvement": {},
+    "status": "success"
+  },
+  "project_dir": "."
+}

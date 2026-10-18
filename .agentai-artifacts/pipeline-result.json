@@ -1,0 +1,36 @@
+{
+  "started_at": "2026-09-03T22:38:30",
+  "stages": {
+    "static": {
+      "mutation_summary": "Generated 0 mutants; 0 are syntax-valid. Execution status is untested because no test command was supplied.",
+      "mutation_findings": "No supported mutation points found.",
+      "mutants": [],
+      "total_mutants": 0,
+      "valid_mutants": 0,
+      "status": "success"
+    },
+    "review": {
+      "generation_summary": "Evolved 3 generations; best fitness 1.06.",
+      "best_solution": "Add focused tests around error handling and boundary conditions.",
+      "recommendations": [
+        "Add focused tests around error handling and boundary conditions."
+      ],
+      "generations": [
+        {
+          "size": 1,
+          "best_fitness": 1.0571
+        },
+        {
+          "size": 1,
+          "best_fitness": 1.0571
+        },
+        {
+          "size": 1,
+          "best_fitness": 1.0571
+        }
+      ],
+      "fitness": 1.0571,
+      "status": "success"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "mode": "sequential",
+  "results": [
+    {
+      "model": "mock-model",
+      "response": "Mock analysis: project structure appears valid.",
+      "status": "success",
+      "response_length": 46
+    }
+  ],
+  "project_dir": "."
+}

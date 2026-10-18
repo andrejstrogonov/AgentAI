@@ -1,0 +1,44 @@
+{
+  "mode": "code_review",
+  "review": {
+    "review": "Error generating code review: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': \"messages.0: use the top-level 'system' parameter for the initial system prompt; the directive-only form (content: [] with output_config) is accepted at any position\"}, 'request_id': 'req_011Ceh4kF4BxHXwB1VKEPpo8'}",
+    "summary": "Review generation failed",
+    "recommendations": "[!] Check error results from models\n[GA] Test async cancellation, timeout, paths and verify error messages remain actionable.\n[GA] Test async cancellation, timeout, paths conditional with boundary-value tests.\n[GA] Test async cancellation, timeout, each conditional with boundary-value tests.",
+    "mutation_testing": {
+      "mutation_summary": "Generated 0 mutants; 0 are syntax-valid. Execution status is untested because no test command was supplied.",
+      "mutation_findings": "No supported mutation points found.",
+      "mutants": [],
+      "total_mutants": 0,
+      "valid_mutants": 0,
+      "status": "success"
+    },
+    "genetic_improvement": {
+      "generation_summary": "Evolved 3 generations; best fitness 1.20.",
+      "best_solution": "Test async cancellation, timeout, paths and verify error messages remain actionable.",
+      "recommendations": [
+        "Test async cancellation, timeout, paths and verify error messages remain actionable.",
+        "Test async cancellation, timeout, paths conditional with boundary-value tests.",
+        "Test async cancellation, timeout, each conditional with boundary-value tests."
+      ],
+      "generations": [
+        {
+          "size": 3,
+          "best_fitness": 1.1286
+        },
+        {
+          "size": 5,
+          "best_fitness": 1.2
+        },
+        {
+          "size": 4,
+          "best_fitness": 1.2
+        }
+      ],
+      "fitness": 1.2,
+      "status": "success"
+    },
+    "status": "error",
+    "error": "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': \"messages.0: use the top-level 'system' parameter for the initial system prompt; the directive-only form (content: [] with output_config) is accepted at any position\"}, 'request_id': 'req_011Ceh4kF4BxHXwB1VKEPpo8'}"
+  },
+  "project_dir": "."
+}

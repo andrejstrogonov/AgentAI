@@ -1,0 +1,17 @@
+
+======================================================================
+ANALYSIS RESULTS
+======================================================================
+
+[1] Model: claude-sonnet-4-6
+    Status: error
+    Error: Messages.create() got an unexpected keyword argument 'temperature'
+    Error Type: TypeError
+
+
+[2] Model: claude-opus-4-1
+    Status: error
+    Error: Messages.create() got an unexpected keyword argument 'temperature'
+    Error Type: TypeError
+
+======================================================================
